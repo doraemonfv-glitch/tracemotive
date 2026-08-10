@@ -18,3 +18,7 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
+
+# Python cache
+__pycache__/
+*.py[cod]
