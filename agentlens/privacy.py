@@ -49,7 +49,9 @@ _QUOTED_ASSIGNMENT_PREFIX_RE = re.compile(
 )
 _UNQUOTED_ASSIGNMENT_RE = re.compile(
     rf"(?<![A-Za-z0-9_-])(?P<key>{_SENSITIVE_KEY_PATTERN})"
-    r"(?P<assignment>\s*[:=]\s*)(?P<value>(?![\"'])[^\s,;)}\]]+)",
+    r"(?P<assignment>\s*[:=]\s*)"
+    r"(?![\"'])"
+    r"(?P<value>(?:\[REDACTED\]|[^\s,;)}\]])[^\s,;)}\]]*)",
     re.IGNORECASE,
 )
 

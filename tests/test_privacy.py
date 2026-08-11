@@ -128,6 +128,30 @@ class PrivacyTests(unittest.TestCase):
             self.assertNotIn(secret, serialized)
         self.assertIn(REDACTION_PLACEHOLDER, serialized)
 
+    def test_unquoted_redaction_marker_must_be_the_complete_scalar(self):
+        cases = {
+            "api_key=[REDACTED]": ("api_key=[REDACTED]", False),
+            "api_key=[redacted]": ("api_key=[REDACTED]", True),
+            "api_key=[REDACTED]top-secret": ("api_key=[REDACTED]", True),
+            "api_key=[redacted]top-secret": ("api_key=[REDACTED]", True),
+            "api_key=[REDACTED], next=safe": ("api_key=[REDACTED], next=safe", False),
+            "api_key=[REDACTED]top-secret access_token=second": (
+                "api_key=[REDACTED] access_token=[REDACTED]",
+                True,
+            ),
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(sanitize_text(source), expected)
+
+        source = "api_key=[REDACTED]top-secret"
+        span = make_span(input_value=source)
+        serialized = span.to_json()
+        self.assertTrue(span.capture.input.redacted)
+        self.assertNotIn("top-secret", serialized)
+        self.assertIn("api_key=[REDACTED]", serialized)
+        self.assertEqual(source, "api_key=[REDACTED]top-secret")
+
     def test_redacted_flag_requires_an_actual_serialized_replacement(self):
         for value in (
             "Bearer [REDACTED]",
