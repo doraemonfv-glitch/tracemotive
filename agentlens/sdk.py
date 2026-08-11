@@ -1,10 +1,4 @@
-"""The framework-independent AgentLens v0.1 Python SDK core.
-
-Issue 06 deliberately stops at the event-emission boundary. This module
-creates privacy-normalized canonical lifecycle snapshots and hands them to an
-internal sink; it does not contain a queue, HTTP client, SQLite dependency,
-or framework integration.
-"""
+"""The framework-independent AgentLens v0.1 Python SDK core."""
 
 from __future__ import annotations
 
@@ -31,6 +25,7 @@ from .canonical import (
     TraceSource,
 )
 from .canonical.models import CanonicalModel, _canonical_json_dumps
+from .transport import LocalTransport
 
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:8765"
@@ -61,6 +56,7 @@ _state_lock = threading.RLock()
 _configuration = _Configuration()
 _configuration_frozen = False
 _event_sink: Any = None
+_transport_sink: LocalTransport | None = None
 
 _current_trace: ContextVar[Trace | None] = ContextVar(
     "agentlens_current_trace", default=None
@@ -171,8 +167,18 @@ get_current_span = current_span
 
 
 def _deliver(event: dict[str, Any]) -> None:
+    global _transport_sink
     with _state_lock:
         sink = _event_sink
+        if sink is None and _configuration.enabled:
+            sink = _transport_sink
+            if sink is None:
+                try:
+                    sink = LocalTransport(_configuration.endpoint)
+                except BaseException:
+                    sink = None
+                else:
+                    _transport_sink = sink
     if sink is None:
         return
     try:
@@ -598,7 +604,7 @@ def flush(timeout_seconds: float = 2.0) -> bool:
 
     with _state_lock:
         configuration = _configuration
-        sink = _event_sink
+        sink = _event_sink if _event_sink is not None else _transport_sink
     if not configuration.enabled or sink is None:
         return True
     try:
@@ -620,19 +626,34 @@ def flush(timeout_seconds: float = 2.0) -> bool:
 def _set_event_sink(sink: Any) -> None:
     """Install an internal sink for tests and the later transport issue."""
 
-    global _event_sink
+    global _event_sink, _transport_sink
     with _state_lock:
+        old_transport = _transport_sink if sink is not None else None
+        if sink is not None:
+            _transport_sink = None
         _event_sink = sink
+    if old_transport is not None:
+        try:
+            old_transport.shutdown()
+        except BaseException:
+            pass
 
 
 def _reset_for_tests() -> None:
     """Reset process state for isolated SDK tests; not a public API."""
 
-    global _configuration, _configuration_frozen, _event_sink
+    global _configuration, _configuration_frozen, _event_sink, _transport_sink
     with _state_lock:
+        old_transport = _transport_sink
         _configuration = _Configuration()
         _configuration_frozen = False
         _event_sink = None
+        _transport_sink = None
+    if old_transport is not None:
+        try:
+            old_transport.shutdown()
+        except BaseException:
+            pass
     _current_trace.set(None)
     _current_span.set(None)
 
