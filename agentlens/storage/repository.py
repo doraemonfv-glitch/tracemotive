@@ -357,8 +357,16 @@ class Repository:
         *,
         lifecycle_stage: int | None = None,
         now_us: int | None = None,
+        replace_same_stage: bool = False,
     ) -> bool:
-        """Insert or promote one canonical Span and its separated I/O row."""
+        """Insert or promote one canonical Span and its separated I/O row.
+
+        ``replace_same_stage`` is an internal collector hook.  The collector
+        performs the Frozen semantic merge first, then uses this option to
+        persist an observation-preserving same-stage enrichment (for example,
+        a captured input arriving after an end-before-start event).  The
+        default storage behavior remains strict repeated-snapshot checking.
+        """
 
         if lifecycle_stage is None:
             lifecycle_stage = 2 if span.ended_at is not None else 1
@@ -410,9 +418,10 @@ class Repository:
             if lifecycle_stage < row["lifecycle_stage"]:
                 return False
             if lifecycle_stage == row["lifecycle_stage"]:
-                if (structural, io) != _row_span_values(row, io_row):
+                if (structural, io) == _row_span_values(row, io_row):
+                    return False
+                if not replace_same_stage:
                     raise EntityConflictError("repeated Span snapshot conflicts")
-                return False
 
             connection.execute(
                 """
@@ -515,6 +524,32 @@ class Repository:
                 "SELECT * FROM ingest_events WHERE event_id = ?", (event_id,)
             ).fetchone()
         return None if row is None else dict(row)
+
+    def has_ingest_event_type(
+        self,
+        *,
+        trace_id: str,
+        span_id: str,
+        event_type: str,
+    ) -> bool:
+        """Return whether one lifecycle event type was recorded for a Span."""
+
+        validate_trace_id(trace_id)
+        validate_span_id(span_id)
+        if not isinstance(event_type, str) or event_type == "":
+            raise ValueError("event_type must be a non-empty string")
+        with self._lock:
+            return (
+                self._connection.execute(
+                    """
+                    SELECT 1 FROM ingest_events
+                    WHERE trace_id = ? AND span_id = ? AND event_type = ?
+                    LIMIT 1
+                    """,
+                    (trace_id, span_id, event_type),
+                ).fetchone()
+                is not None
+            )
 
     def delete_trace(self, trace_id: str) -> bool:
         """Delete a Trace, its Spans, content, and event records atomically."""
