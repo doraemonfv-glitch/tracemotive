@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { fetchSpanList, fetchTraceDetail, QueryApiError } from "./api";
-import { SpanTree } from "./span-tree";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchSpanDetail, fetchSpanList, fetchTraceDetail, QueryApiError } from "./api";
+import { SpanInspector, type SpanInspectorState } from "./span-inspector";
+import { spanIdentityKey, SpanTree } from "./span-tree";
 import { Timeline } from "./timeline";
-import type { SpanListResponse, TraceDetailResponse, TraceStatus } from "./types";
+import type { SpanIdentity, SpanListResponse, SpanRecord, TraceDetailResponse, TraceStatus } from "./types";
 
 type DetailState =
   | { kind: "loading" }
@@ -40,15 +41,45 @@ function statusLabel(status: TraceStatus): string {
   return { unset: "Unset", ok: "OK", error: "Error" }[status];
 }
 
+function sameIdentity(left: SpanIdentity, right: SpanIdentity): boolean {
+  return left.trace_id === right.trace_id && left.span_id === right.span_id;
+}
+
+function inspectorStateForRender(
+  state: SpanInspectorState,
+  selectedSpan: SpanIdentity | null,
+  traceId: string,
+): SpanInspectorState {
+  if (selectedSpan === null || selectedSpan.trace_id !== traceId) {
+    return { kind: "no-selection" };
+  }
+  if (state.kind === "loaded" || state.kind === "loading" || state.kind === "not-found" || state.kind === "error") {
+    return sameIdentity(state.identity, selectedSpan) ? state : { kind: "loading", identity: selectedSpan };
+  }
+  return { kind: "loading", identity: selectedSpan };
+}
+
 export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () => void }) {
   const [detail, setDetail] = useState<DetailState>({ kind: "loading" });
   const [spans, setSpans] = useState<SpanState>({ kind: "loading" });
+  const [selectedSpan, setSelectedSpan] = useState<SpanIdentity | null>(null);
+  const [inspector, setInspector] = useState<SpanInspectorState>({ kind: "no-selection" });
   const requestIdentity = useRef(0);
+  const inspectorRequestIdentity = useRef(0);
+
+  const selectSpan = useCallback((span: SpanRecord) => {
+    const identity = { trace_id: span.trace_id, span_id: span.span_id };
+    inspectorRequestIdentity.current += 1;
+    setSelectedSpan(identity);
+    setInspector({ kind: "loading", identity });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
     const currentRequest = requestIdentity.current + 1;
     requestIdentity.current = currentRequest;
+    setSelectedSpan(null);
+    setInspector({ kind: "no-selection" });
     setDetail({ kind: "loading" });
     setSpans({ kind: "loading" });
 
@@ -80,6 +111,36 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
 
     return () => controller.abort();
   }, [traceId]);
+
+  useEffect(() => {
+    const currentRequest = inspectorRequestIdentity.current + 1;
+    inspectorRequestIdentity.current = currentRequest;
+    const selected = selectedSpan;
+    if (selected === null || selected.trace_id !== traceId) {
+      setInspector({ kind: "no-selection" });
+      return;
+    }
+
+    const controller = new AbortController();
+    setInspector({ kind: "loading", identity: selected });
+    void fetchSpanDetail(selected.trace_id, selected.span_id, controller.signal).then(
+      (response) => {
+        if (inspectorRequestIdentity.current === currentRequest) {
+          setInspector({ kind: "loaded", identity: selected, span: response.span });
+        }
+      },
+      (error: unknown) => {
+        if (!controller.signal.aborted && inspectorRequestIdentity.current === currentRequest) {
+          setInspector({ kind: isNotFound(error) ? "not-found" : "error", identity: selected });
+        }
+      },
+    );
+
+    return () => controller.abort();
+  }, [selectedSpan, traceId]);
+
+  const visibleSelectedSpan = selectedSpan?.trace_id === traceId ? selectedSpan : null;
+  const visibleInspector = inspectorStateForRender(inspector, selectedSpan, traceId);
 
   return (
     <main className="trace-detail-page">
@@ -151,9 +212,17 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
               <p>Unable to load the span tree.</p>
             </section>
           )}
-          {spans.kind === "loaded" && <SpanTree spans={spans.response.items} />}
+          {spans.kind === "loaded" && (
+            <SpanTree
+              spans={spans.response.items}
+              selectedSpanKey={visibleSelectedSpan === null ? null : spanIdentityKey(visibleSelectedSpan.trace_id, visibleSelectedSpan.span_id)}
+              onSelectSpan={selectSpan}
+            />
+          )}
         </section>
       )}
+
+      {detail.kind === "loaded" && <SpanInspector state={visibleInspector} />}
 
       {detail.kind === "loaded" && (
         <section className="timeline-panel" aria-labelledby="timeline-heading">

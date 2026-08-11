@@ -134,6 +134,22 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
 .timeline-track-unset .timeline-point, .timeline-track-incomplete .timeline-point { background: #68758c; border-radius: 0; }
 .timeline-unavailable { align-self: center; color: #7a4650; font-size: 0.78rem; margin: 12px 16px; }
 
+.span-inspector { background: #ffffff; border: 1px solid #dce1ea; border-radius: 10px; margin-top: 28px; min-width: 0; padding: 20px; }
+.inspector-content { display: grid; gap: 20px; min-width: 0; }
+.inspector-section { border-top: 1px solid #e3e7ee; min-width: 0; padding-top: 16px; }
+.inspector-section:first-child { border-top: 0; padding-top: 0; }
+.inspector-section h3, .inspector-subsection h4 { color: #27334a; font-size: 0.9rem; letter-spacing: 0.02em; margin: 0 0 10px; }
+.inspector-subsection { border-top: 1px solid #edf0f5; margin-top: 16px; padding-top: 14px; }
+.inspector-subsection h4 { color: #566176; font-size: 0.78rem; text-transform: uppercase; }
+.inspector-fields { display: grid; gap: 8px 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.inspector-field { min-width: 0; }
+.inspector-field dt { color: #566176; font-size: 0.72rem; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+.inspector-field dd { color: #172033; font-size: 0.86rem; margin: 3px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.inspector-capture-state { color: #3e485b; font-size: 0.82rem; margin: 0 0 9px; overflow-wrap: anywhere; }
+.inspector-muted { color: #566176; font-size: 0.82rem; margin: 0; }
+.inspector-warning { background: #fff8e6; border: 1px solid #e5c56b; border-radius: 6px; color: #735500; font-size: 0.82rem; margin: 12px 0 0; padding: 8px 10px; }
+.inspector-json { background: #f6f8fc; border: 1px solid #e0e5ee; border-radius: 6px; color: #24324d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; line-height: 1.5; margin: 0; max-height: 360px; max-width: 100%; overflow: auto; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+
 @media (max-width: 720px) {
   .trace-list-page { padding: 18px; }
   .trace-detail-page { padding: 18px; }
@@ -147,4 +163,6 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
   .span-node { padding-right: 10px; }
   .timeline-row-facts { padding-left: 10px; padding-right: 10px; }
   .timeline-track { margin-left: 10px; margin-right: 10px; }
+  .span-inspector { padding: 16px; }
+  .inspector-fields { grid-template-columns: minmax(0, 1fr); }
 }

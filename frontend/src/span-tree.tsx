@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { SpanRecord } from "./types";
 
 export type SpanRelationship = "root" | "orphan" | "cycle";
@@ -186,8 +186,15 @@ function relationshipLabel(node: SpanTreeNode): string | null {
   return null;
 }
 
-export function SpanTree({ spans }: { spans: SpanRecord[] }) {
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+export function SpanTree({
+  spans,
+  selectedSpanKey = null,
+  onSelectSpan = () => undefined,
+}: {
+  spans: SpanRecord[];
+  selectedSpanKey?: string | null;
+  onSelectSpan?: (span: SpanRecord) => void;
+}) {
   const treeState = useMemo(() => {
     try {
       return { tree: buildSpanTree(spans), error: false };
@@ -218,7 +225,7 @@ export function SpanTree({ spans }: { spans: SpanRecord[] }) {
       <div className="span-tree-scroll">
         <div className="span-tree" role="tree" aria-label="Span hierarchy">
           {rows.map(({ node, depth }) => {
-            const selected = selectedKey === node.key;
+            const selected = selectedSpanKey === node.key;
             const relationship = relationshipLabel(node);
             return (
               <div
@@ -236,7 +243,7 @@ export function SpanTree({ spans }: { spans: SpanRecord[] }) {
                   className="span-node"
                   aria-label={`Select span ${node.span.name}`}
                   aria-pressed={selected}
-                  onClick={() => setSelectedKey(node.key)}
+                  onClick={() => onSelectSpan(node.span)}
                 >
                   <span className="span-node-main">
                     <span className="span-node-name">{node.span.name}</span>
@@ -256,7 +263,7 @@ export function SpanTree({ spans }: { spans: SpanRecord[] }) {
         </div>
       </div>
       <p className="selection-note" aria-live="polite">
-        {selectedKey === null ? "Select a span to mark it for later inspection." : "Span selected for later inspection."}
+        {selectedSpanKey === null ? "Select a span to inspect its canonical details." : "Span selected for inspection."}
       </p>
     </section>
   );
