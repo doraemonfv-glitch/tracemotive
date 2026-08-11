@@ -6,7 +6,14 @@ from .migrations import (
     NewerDatabaseError,
     run_migrations,
 )
-from .repository import EntityConflictError, Repository, SQLiteRepository
+from .repository import (
+    EntityConflictError,
+    Repository,
+    SQLiteRepository,
+    TraceQueryRecord,
+    TraceStats,
+    TraceSummaryRecord,
+)
 
 __all__ = [
     "CURRENT_MIGRATION_VERSION",
@@ -15,5 +22,8 @@ __all__ = [
     "NewerDatabaseError",
     "Repository",
     "SQLiteRepository",
+    "TraceQueryRecord",
+    "TraceStats",
+    "TraceSummaryRecord",
     "run_migrations",
 ]

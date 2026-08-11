@@ -706,7 +706,7 @@ def create_app(
     clock: Callable[[], int] | None = None,
     bind_host: str = DEFAULT_BIND_HOST,
 ) -> Any:
-    """Create the narrow FastAPI Issue 04 ingest application.
+    """Create the local FastAPI application for ingest and Query API routes.
 
     Binding is deliberately constrained here because v0.1 has no remote
     collector security model.  The returned app contains only the ingest
@@ -741,6 +741,9 @@ def create_app(
             return JSONResponse(status_code=exc.status_code, content=exc.body())
         return JSONResponse(status_code=200, content=result)
 
+    from agentlens.query import register_query_routes
+
+    register_query_routes(app, collector.repository)
     return app
 
 

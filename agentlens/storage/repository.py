@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 import re
 import sqlite3
 from threading import RLock
@@ -34,6 +35,37 @@ from .migrations import run_migrations
 
 class EntityConflictError(RuntimeError):
     """Raised when an immutable or repeated lifecycle snapshot conflicts."""
+
+
+@dataclass(frozen=True, slots=True)
+class TraceStats:
+    """Derived statistics returned by the Query API storage boundary."""
+
+    span_count: int
+    error_count: int
+    llm_call_count: int
+    input_tokens: int | None
+    output_tokens: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class TraceSummaryRecord:
+    """A trace-list record without loading trace content fields."""
+
+    trace_id: str
+    name: str
+    started_at: str
+    ended_at: str | None
+    status: str
+    stats: TraceStats
+
+
+@dataclass(frozen=True, slots=True)
+class TraceQueryRecord:
+    """A reconstructed Trace and its derived Query API statistics."""
+
+    trace: Trace
+    stats: TraceStats
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -500,6 +532,128 @@ class Repository:
             ).fetchone()
         return None if row is None else self._trace_from_row(row)
 
+    def list_trace_summaries(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        status: str | None = None,
+        name: str | None = None,
+    ) -> tuple[list[TraceSummaryRecord], int]:
+        """Return deterministic, paged trace summaries and the total count.
+
+        Trace-list reads intentionally select only summary columns.  Canonical
+        metadata, attributes, and other content fields are not loaded for
+        this Query API response.
+        """
+
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if type(offset) is not int or offset < 0:
+            raise ValueError("offset must be non-negative")
+        if status is not None and status not in {"unset", "ok", "error"}:
+            raise ValueError("invalid trace status")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("name must be a string")
+
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT trace_id, name, started_at_us, ended_at_us, status
+                FROM traces
+                ORDER BY started_at_us DESC, trace_id ASC
+                """
+            ).fetchall()
+
+            normalized_name = None if name is None else name.casefold()
+            matching_rows = [
+                row
+                for row in rows
+                if (status is None or row["status"] == status)
+                and (
+                    normalized_name is None
+                    or normalized_name in row["name"].casefold()
+                )
+            ]
+            total = len(matching_rows)
+            page_rows = matching_rows[offset : offset + limit]
+            trace_ids = [row["trace_id"] for row in page_rows]
+            stats_by_trace = self._stats_by_trace_ids(trace_ids)
+
+        return (
+            [
+                TraceSummaryRecord(
+                    trace_id=row["trace_id"],
+                    name=row["name"],
+                    started_at=us_to_timestamp(row["started_at_us"]),  # type: ignore[arg-type]
+                    ended_at=us_to_timestamp(row["ended_at_us"]),
+                    status=row["status"],
+                    stats=stats_by_trace[row["trace_id"]],
+                )
+                for row in page_rows
+            ],
+            total,
+        )
+
+    def get_trace_query(self, trace_id: str) -> TraceQueryRecord | None:
+        """Reconstruct one Trace and derive its Query API statistics."""
+
+        validate_trace_id(trace_id)
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM traces WHERE trace_id = ?", (trace_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            span_rows = self._connection.execute(
+                "SELECT trace_id, status, type, details_json FROM spans WHERE trace_id = ?",
+                (trace_id,),
+            ).fetchall()
+            trace = self._trace_from_row(row)
+            stats = self._stats_for_rows(span_rows)
+        return TraceQueryRecord(trace=trace, stats=stats)
+
+    def get_spans_for_trace(self, trace_id: str) -> list[Span] | None:
+        """Return all spans for a trace in the Frozen deterministic order.
+
+        A span-before-trace ingest is queryable while the span exists; an ID
+        with neither a Trace nor any Span is treated as an unknown trace.
+        """
+
+        validate_trace_id(trace_id)
+        with self._lock:
+            trace_exists = self._connection.execute(
+                "SELECT 1 FROM traces WHERE trace_id = ?", (trace_id,)
+            ).fetchone() is not None
+            span_rows = self._connection.execute(
+                """
+                SELECT * FROM spans
+                WHERE trace_id = ?
+                ORDER BY started_at_us ASC, span_id ASC
+                """,
+                (trace_id,),
+            ).fetchall()
+            if not trace_exists and not span_rows:
+                return None
+            io_rows = self._connection.execute(
+                "SELECT * FROM span_io WHERE trace_id = ?", (trace_id,)
+            ).fetchall()
+            io_by_span = {row["span_id"]: row for row in io_rows}
+            spans: list[Span] = []
+            for row in span_rows:
+                io_row = io_by_span.get(row["span_id"])
+                if io_row is None:
+                    raise RuntimeError("span_io is missing for a persisted Span")
+                spans.append(self._span_from_rows(row, io_row))
+        return spans
+
+    def health_check(self) -> bool:
+        """Verify that the configured SQLite connection is readable."""
+
+        with self._lock:
+            row = self._connection.execute("SELECT 1").fetchone()
+        return row is not None and row[0] == 1
+
     def get_span(self, trace_id: str, span_id: str) -> Span | None:
         validate_trace_id(trace_id)
         validate_span_id(span_id)
@@ -524,6 +678,59 @@ class Repository:
                 "SELECT * FROM ingest_events WHERE event_id = ?", (event_id,)
             ).fetchone()
         return None if row is None else dict(row)
+
+    def _stats_by_trace_ids(
+        self, trace_ids: list[str]
+    ) -> dict[str, TraceStats]:
+        stats_by_trace = {
+            trace_id: TraceStats(0, 0, 0, None, None) for trace_id in trace_ids
+        }
+        if not trace_ids:
+            return stats_by_trace
+        placeholders = ", ".join("?" for _ in trace_ids)
+        rows = self._connection.execute(
+            f"""
+            SELECT trace_id, status, type, details_json
+            FROM spans
+            WHERE trace_id IN ({placeholders})
+            """,
+            trace_ids,
+        ).fetchall()
+        grouped: dict[str, list[sqlite3.Row]] = {trace_id: [] for trace_id in trace_ids}
+        for row in rows:
+            grouped[row["trace_id"]].append(row)
+        for trace_id, trace_rows in grouped.items():
+            stats_by_trace[trace_id] = self._stats_for_rows(trace_rows)
+        return stats_by_trace
+
+    @staticmethod
+    def _stats_for_rows(rows: list[sqlite3.Row]) -> TraceStats:
+        span_count = 0
+        error_count = 0
+        llm_call_count = 0
+        input_tokens: int | None = None
+        output_tokens: int | None = None
+        for row in rows:
+            span_count += 1
+            if row["status"] == "error":
+                error_count += 1
+            if row["type"] != "llm":
+                continue
+            llm_call_count += 1
+            details = details_from_dict(_parsed_json(row["details_json"]))
+            if details.kind != "llm":
+                raise ValidationError("stored LLM Span has non-LLM details")
+            if details.usage.input_tokens is not None:
+                input_tokens = (input_tokens or 0) + details.usage.input_tokens
+            if details.usage.output_tokens is not None:
+                output_tokens = (output_tokens or 0) + details.usage.output_tokens
+        return TraceStats(
+            span_count=span_count,
+            error_count=error_count,
+            llm_call_count=llm_call_count,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
     def has_ingest_event_type(
         self,
@@ -666,6 +873,9 @@ __all__ = [
     "EntityConflictError",
     "Repository",
     "SQLiteRepository",
+    "TraceQueryRecord",
+    "TraceStats",
+    "TraceSummaryRecord",
     "timestamp_to_us",
     "us_to_timestamp",
 ]
