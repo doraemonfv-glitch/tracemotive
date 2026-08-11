@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchSpanList, fetchTraceDetail, QueryApiError } from "./api";
 import { SpanTree } from "./span-tree";
+import { Timeline } from "./timeline";
 import type { SpanListResponse, TraceDetailResponse, TraceStatus } from "./types";
 
 type DetailState =
@@ -151,6 +152,34 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
             </section>
           )}
           {spans.kind === "loaded" && <SpanTree spans={spans.response.items} />}
+        </section>
+      )}
+
+      {detail.kind === "loaded" && (
+        <section className="timeline-panel" aria-labelledby="timeline-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Observed execution timing</p>
+              <h2 id="timeline-heading">Timeline</h2>
+            </div>
+          </div>
+
+          {spans.kind === "loading" && (
+            <section className="state-message" aria-live="polite" aria-busy="true">
+              Loading timeline...
+            </section>
+          )}
+          {spans.kind === "not-found" && (
+            <section className="state-message empty-state" aria-live="polite">
+              <p>The timeline is no longer available for this trace.</p>
+            </section>
+          )}
+          {spans.kind === "error" && (
+            <section className="state-message state-error" role="alert">
+              <p>Unable to load the timeline.</p>
+            </section>
+          )}
+          {spans.kind === "loaded" && <Timeline trace={detail.response.trace} spans={spans.response.items} />}
         </section>
       )}
     </main>

@@ -99,11 +99,13 @@ describe("Trace Detail", () => {
     bSpans.resolve(response(spansResponse(otherTraceId, "Current root B")));
     expect(await screen.findByText("Current trace B")).toBeTruthy();
     expect(screen.getByText("Current root B")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /Current root B/ })).toBeTruthy();
 
     aDetail.resolve(response(detailResponse(traceId, "Stale trace A")));
     aSpans.resolve(response(spansResponse(traceId, "Stale root A")));
     await waitFor(() => expect(screen.queryByText("Stale trace A")).toBeNull());
     expect(screen.queryByText("Stale root A")).toBeNull();
+    expect(screen.queryByRole("img", { name: /Stale root A/ })).toBeNull();
     expect(screen.getByText("Current trace B")).toBeTruthy();
   });
 

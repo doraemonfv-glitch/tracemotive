@@ -167,7 +167,9 @@ function statusLabel(status: SpanRecord["status"]): string {
   return { unset: "Unset", ok: "OK", error: "Error" }[status];
 }
 
-function formatDuration(value: number | null): string {
+// Timeline geometry is exact microseconds, while this remains the shared
+// Query-API-derived duration presentation established by the trace list.
+export function formatDuration(value: number | null): string {
   if (value === null) {
     return "Unavailable";
   }
