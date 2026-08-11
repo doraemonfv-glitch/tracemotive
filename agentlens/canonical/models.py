@@ -213,6 +213,26 @@ def _normalize_json_object(value: Any, field_name: str) -> JSONObject:
     return normalized
 
 
+def _sanitize_text(value: str) -> str:
+    from ..privacy import sanitize_text
+
+    sanitized, _ = sanitize_text(value)
+    return sanitized
+
+
+def _sanitize_json_value(value: Any, field_name: str) -> tuple[JSONValue, bool]:
+    from ..privacy import sanitize_json_value
+
+    return sanitize_json_value(value, field_name=field_name)
+
+
+def _sanitize_json_object(value: Any, field_name: str) -> tuple[JSONObject, bool]:
+    from ..privacy import sanitize_json_object
+
+    sanitized, redacted = sanitize_json_object(value, field_name=field_name)
+    return sanitized, redacted
+
+
 def validate_trace_id(value: Any) -> str:
     value = _require_string(value, "trace_id")
     if _TRACE_ID_RE.fullmatch(value) is None or value == "0" * 32:
@@ -634,6 +654,8 @@ class Error(CanonicalModel):
     def __post_init__(self) -> None:
         _require_string(self.type, "error.type", nullable=True)
         _require_string(self.message, "error.message", nullable=True)
+        if self.message is not None:
+            object.__setattr__(self, "message", _sanitize_text(self.message))
         if self.type is None and self.message is None:
             _fail("Error requires type or message")
 
@@ -704,6 +726,8 @@ class AgentDetails(CanonicalModel):
             _fail("AgentDetails.kind must be 'agent'")
         _require_string(self.agent_name, "agent_name", nullable=True)
         _require_string(self.agent_version, "agent_version", nullable=True)
+        if self.agent_name is not None:
+            object.__setattr__(self, "agent_name", _sanitize_text(self.agent_name))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AgentDetails":
@@ -822,7 +846,7 @@ class LLMDetails(CanonicalModel):
             _require_string(reason, f"finish_reasons[{index}]")
         object.__setattr__(self, "finish_reasons", finish_reasons)
         if self.request_parameters is not None:
-            normalized = _normalize_json_object(self.request_parameters, "request_parameters")
+            normalized, _ = _sanitize_json_object(self.request_parameters, "request_parameters")
             object.__setattr__(self, "request_parameters", normalized)
         _require_model_or_none(self.estimated_cost, EstimatedCost, "estimated_cost")
 
@@ -864,6 +888,7 @@ class ToolDetails(CanonicalModel):
         tool_name = _require_string(self.tool_name, "tool_name")
         if tool_name == "":
             _fail("tool_name must be non-empty")
+        object.__setattr__(self, "tool_name", _sanitize_text(tool_name))
         _require_string(self.tool_call_id, "tool_call_id", nullable=True)
 
     @classmethod
@@ -885,6 +910,10 @@ class HandoffDetails(CanonicalModel):
             _fail("HandoffDetails.kind must be 'handoff'")
         _require_string(self.from_agent, "from_agent", nullable=True)
         _require_string(self.to_agent, "to_agent", nullable=True)
+        if self.from_agent is not None:
+            object.__setattr__(self, "from_agent", _sanitize_text(self.from_agent))
+        if self.to_agent is not None:
+            object.__setattr__(self, "to_agent", _sanitize_text(self.to_agent))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "HandoffDetails":
@@ -990,15 +1019,19 @@ class Trace(CanonicalModel):
         if self.schema_version != AGENTLENS_SCHEMA_VERSION:
             _fail(f"schema_version must equal {AGENTLENS_SCHEMA_VERSION!r}")
         validate_trace_id(self.trace_id)
-        _require_non_empty_string(self.name, "name", 256)
+        name = _sanitize_text(_require_string(self.name, "name"))
+        _require_non_empty_string(name, "name", 256)
+        object.__setattr__(self, "name", name)
         _, started = _parse_timestamp(self.started_at, "started_at")
         _, ended = _optional_timestamp(self.ended_at, "ended_at")
         if ended is not None and ended < started:
             _fail("ended_at must not be before started_at")
         _require_enum(self.status, "status", STATUSES)
         _require_model(self.source, TraceSource, "source")
-        object.__setattr__(self, "metadata", _normalize_json_object(self.metadata, "metadata"))
-        object.__setattr__(self, "attributes", _normalize_json_object(self.attributes, "attributes"))
+        metadata, _ = _sanitize_json_object(self.metadata, "metadata")
+        attributes, _ = _sanitize_json_object(self.attributes, "attributes")
+        object.__setattr__(self, "metadata", metadata)
+        object.__setattr__(self, "attributes", attributes)
         if ended is None and self.status != "unset":
             _fail("an unfinished Trace must have status=unset")
 
@@ -1081,24 +1114,57 @@ class Span(CanonicalModel):
         if self.parent_span_id is not None:
             validate_span_id(self.parent_span_id)
         _require_enum(self.type, "type", SPAN_TYPES)
-        _require_non_empty_string(self.operation, "operation", 128)
-        _require_non_empty_string(self.name, "name", 256)
+        operation = _sanitize_text(_require_string(self.operation, "operation"))
+        name = _sanitize_text(_require_string(self.name, "name"))
+        _require_non_empty_string(operation, "operation", 128)
+        _require_non_empty_string(name, "name", 256)
+        object.__setattr__(self, "operation", operation)
+        object.__setattr__(self, "name", name)
         _, started = _parse_timestamp(self.started_at, "started_at")
         _, ended = _optional_timestamp(self.ended_at, "ended_at")
         if ended is not None and ended < started:
             _fail("ended_at must not be before started_at")
         _require_enum(self.status, "status", STATUSES)
         _require_model_or_none(self.error, Error, "error")
-        object.__setattr__(self, "input", normalize_json_value(self.input, field_name="input"))
-        object.__setattr__(self, "output", normalize_json_value(self.output, field_name="output"))
         _require_model(self.capture, Capture, "capture")
         if self.capture.input.state == "not_captured" and self.input is not None:
             _fail("not_captured input must be null")
         if self.capture.output.state == "not_captured" and self.output is not None:
             _fail("not_captured output must be null")
+
+        from ..privacy import MAX_CONTENT_BYTES
+
+        input_value, input_redacted = (None, False)
+        capture_input = self.capture.input
+        if capture_input.state == "captured":
+            input_value, input_redacted = _sanitize_json_value(self.input, "input")
+            if len(_canonical_json_dumps(input_value).encode("utf-8")) > MAX_CONTENT_BYTES:
+                input_value = None
+                input_redacted = False
+                capture_input = CaptureInfo("not_captured", "size_limit", False)
+
+        output_value, output_redacted = (None, False)
+        capture_output = self.capture.output
+        if capture_output.state == "captured":
+            output_value, output_redacted = _sanitize_json_value(self.output, "output")
+            if len(_canonical_json_dumps(output_value).encode("utf-8")) > MAX_CONTENT_BYTES:
+                output_value = None
+                output_redacted = False
+                capture_output = CaptureInfo("not_captured", "size_limit", False)
+
+        object.__setattr__(self, "input", input_value)
+        object.__setattr__(self, "output", output_value)
+        if capture_input.state == "captured" and capture_input.redacted != input_redacted:
+            capture_input = CaptureInfo("captured", None, input_redacted)
+        if capture_output.state == "captured" and capture_output.redacted != output_redacted:
+            capture_output = CaptureInfo("captured", None, output_redacted)
+        if capture_input != self.capture.input or capture_output != self.capture.output:
+            object.__setattr__(self, "capture", Capture(capture_input, capture_output))
         _require_model(self.source, SpanSource, "source")
-        object.__setattr__(self, "metadata", _normalize_json_object(self.metadata, "metadata"))
-        object.__setattr__(self, "attributes", _normalize_json_object(self.attributes, "attributes"))
+        metadata, _ = _sanitize_json_object(self.metadata, "metadata")
+        attributes, _ = _sanitize_json_object(self.attributes, "attributes")
+        object.__setattr__(self, "metadata", metadata)
+        object.__setattr__(self, "attributes", attributes)
         if not isinstance(self.details, tuple(_DETAIL_TYPES.values())):
             _fail("details must be a canonical Details variant")
         if self.details.kind != self.type:
