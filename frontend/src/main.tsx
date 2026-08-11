@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { TraceList } from "./trace-list";
+import { AgentLensApp } from "./app";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -11,6 +11,6 @@ if (rootElement === null) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <TraceList />
+    <AgentLensApp />
   </StrictMode>,
 );

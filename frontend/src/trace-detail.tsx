@@ -1,0 +1,193 @@
+import { useEffect, useRef, useState } from "react";
+import { fetchSpanList, fetchTraceDetail, QueryApiError } from "./api";
+import { SpanTree } from "./span-tree";
+import type { SpanListResponse, TraceDetailResponse, TraceStatus } from "./types";
+
+type DetailState =
+  | { kind: "loading" }
+  | { kind: "loaded"; response: TraceDetailResponse }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+type SpanState =
+  | { kind: "loading" }
+  | { kind: "loaded"; response: SpanListResponse }
+  | { kind: "not-found" }
+  | { kind: "error" };
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof QueryApiError && error.status === 404;
+}
+
+function formatExactInteger(value: bigint): string {
+  return value.toLocaleString("en-US");
+}
+
+function formatNullableExactInteger(value: bigint | null): string {
+  return value === null ? "Unknown" : formatExactInteger(value);
+}
+
+function formatDuration(value: number | null): string {
+  return value === null ? "Unavailable" : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }).format(value)} ms`;
+}
+
+function formatEndTime(value: string | null): string {
+  return value === null ? "Not ended" : value;
+}
+
+function statusLabel(status: TraceStatus): string {
+  return { unset: "Unset", ok: "OK", error: "Error" }[status];
+}
+
+export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () => void }) {
+  const [detail, setDetail] = useState<DetailState>({ kind: "loading" });
+  const [spans, setSpans] = useState<SpanState>({ kind: "loading" });
+  const requestIdentity = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const currentRequest = requestIdentity.current + 1;
+    requestIdentity.current = currentRequest;
+    setDetail({ kind: "loading" });
+    setSpans({ kind: "loading" });
+
+    void fetchTraceDetail(traceId, controller.signal).then(
+      (response) => {
+        if (requestIdentity.current === currentRequest) {
+          setDetail({ kind: "loaded", response });
+        }
+      },
+      (error: unknown) => {
+        if (!controller.signal.aborted && requestIdentity.current === currentRequest) {
+          setDetail({ kind: isNotFound(error) ? "not-found" : "error" });
+        }
+      },
+    );
+
+    void fetchSpanList(traceId, controller.signal).then(
+      (response) => {
+        if (requestIdentity.current === currentRequest) {
+          setSpans({ kind: "loaded", response });
+        }
+      },
+      (error: unknown) => {
+        if (!controller.signal.aborted && requestIdentity.current === currentRequest) {
+          setSpans({ kind: isNotFound(error) ? "not-found" : "error" });
+        }
+      },
+    );
+
+    return () => controller.abort();
+  }, [traceId]);
+
+  return (
+    <main className="trace-detail-page">
+      <header className="detail-page-header">
+        <button type="button" className="back-button" onClick={onBack}>
+          Back to traces
+        </button>
+        <p className="eyebrow">AgentLens / Trace detail</p>
+        <h1>{detail.kind === "loaded" ? detail.response.trace.name : "Trace detail"}</h1>
+        <code className="detail-trace-id">{traceId}</code>
+      </header>
+
+      {detail.kind === "loading" && (
+        <section className="state-message" aria-live="polite" aria-busy="true">
+          Loading trace detail...
+        </section>
+      )}
+
+      {detail.kind === "not-found" && (
+        <section className="state-message empty-state" aria-live="polite">
+          <p>Trace not found.</p>
+        </section>
+      )}
+
+      {detail.kind === "error" && (
+        <section className="state-message state-error" role="alert">
+          <p>Unable to load trace detail.</p>
+        </section>
+      )}
+
+      {detail.kind === "loading" && (
+        <section className="span-hierarchy-panel" aria-labelledby="span-hierarchy-loading-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Observed parent relationships</p>
+              <h2 id="span-hierarchy-loading-heading">Span hierarchy</h2>
+            </div>
+          </div>
+          <section className="state-message" aria-live="polite" aria-busy="true">
+            Loading span tree...
+          </section>
+        </section>
+      )}
+
+      {detail.kind === "loaded" && <TraceSummary response={detail.response} />}
+
+      {detail.kind === "loaded" && (
+        <section className="span-hierarchy-panel" aria-labelledby="span-hierarchy-heading">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Observed parent relationships</p>
+              <h2 id="span-hierarchy-heading">Span hierarchy</h2>
+            </div>
+            <span className="section-count">{formatExactInteger(detail.response.stats.span_count)} spans</span>
+          </div>
+
+          {spans.kind === "loading" && (
+            <section className="state-message" aria-live="polite" aria-busy="true">
+              Loading span tree...
+            </section>
+          )}
+          {spans.kind === "not-found" && (
+            <section className="state-message empty-state" aria-live="polite">
+              <p>The span result is no longer available for this trace.</p>
+            </section>
+          )}
+          {spans.kind === "error" && (
+            <section className="state-message state-error" role="alert">
+              <p>Unable to load the span tree.</p>
+            </section>
+          )}
+          {spans.kind === "loaded" && <SpanTree spans={spans.response.items} />}
+        </section>
+      )}
+    </main>
+  );
+}
+
+function TraceSummary({ response }: { response: TraceDetailResponse }) {
+  const { trace, stats } = response;
+  return (
+    <section className="trace-summary" aria-label="Trace summary">
+      <div className="trace-summary-heading">
+        <div>
+          <p className="eyebrow">Trace summary</p>
+          <span className={`status status-${trace.status}`}>{statusLabel(trace.status)}</span>
+        </div>
+        <div className="trace-summary-times">
+          <span><strong>Started</strong> {trace.started_at}</span>
+          <span><strong>Ended</strong> {formatEndTime(trace.ended_at)}</span>
+        </div>
+      </div>
+      <dl className="metric-grid">
+        <Metric label="Duration" value={formatDuration(stats.latency_ms)} />
+        <Metric label="Spans" value={formatExactInteger(stats.span_count)} />
+        <Metric label="Errors" value={formatExactInteger(stats.error_count)} />
+        <Metric label="LLM calls" value={formatExactInteger(stats.llm_call_count)} />
+        <Metric label="Input tokens" value={formatNullableExactInteger(stats.input_tokens)} />
+        <Metric label="Output tokens" value={formatNullableExactInteger(stats.output_tokens)} />
+      </dl>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric">
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}

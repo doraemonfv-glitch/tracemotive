@@ -34,12 +34,14 @@ function statusLabel(status: TraceStatus): string {
   return { unset: "Unset", ok: "OK", error: "Error" }[status];
 }
 
-function TraceRow({ trace }: { trace: TraceSummary }) {
+function TraceRow({ trace, onOpenTrace }: { trace: TraceSummary; onOpenTrace: (traceId: string) => void }) {
   return (
     <tr>
       <td className="trace-identity">
-        <span className="trace-name">{trace.name}</span>
-        <code>{trace.trace_id}</code>
+        <button type="button" className="trace-link" onClick={() => onOpenTrace(trace.trace_id)}>
+          <span className="trace-name">{trace.name}</span>
+          <code>{trace.trace_id}</code>
+        </button>
       </td>
       <td>
         <span className={`status status-${trace.status}`}>{statusLabel(trace.status)}</span>
@@ -56,7 +58,7 @@ function TraceRow({ trace }: { trace: TraceSummary }) {
   );
 }
 
-export function TraceList() {
+export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (traceId: string) => void } = {}) {
   const [status, setStatus] = useState<TraceStatus | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [offset, setOffset] = useState(0n);
@@ -162,6 +164,7 @@ export function TraceList() {
         <TraceResults
           response={view.response}
           filtersAreActive={filtersAreActive}
+          onOpenTrace={onOpenTrace}
           onPrevious={() => setOffset((current) => current > PAGE_INCREMENT ? current - PAGE_INCREMENT : 0n)}
           onNext={() => setOffset((current) => current + PAGE_INCREMENT)}
         />
@@ -173,11 +176,13 @@ export function TraceList() {
 function TraceResults({
   response,
   filtersAreActive,
+  onOpenTrace,
   onPrevious,
   onNext,
 }: {
   response: TraceListResponse;
   filtersAreActive: boolean;
+  onOpenTrace: (traceId: string) => void;
   onPrevious: () => void;
   onNext: () => void;
 }) {
@@ -228,7 +233,7 @@ function TraceResults({
               <th scope="col">Output tokens</th>
             </tr>
           </thead>
-          <tbody>{items.map((trace) => <TraceRow key={trace.trace_id} trace={trace} />)}</tbody>
+          <tbody>{items.map((trace) => <TraceRow key={trace.trace_id} trace={trace} onOpenTrace={onOpenTrace} />)}</tbody>
         </table>
       </div>
       <Pagination

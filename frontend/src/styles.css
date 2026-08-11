@@ -52,6 +52,9 @@ h1 { font-size: 2rem; letter-spacing: -0.035em; margin: 0; }
 
 .trace-identity { min-width: 240px; white-space: normal !important; }
 
+.trace-link { background: transparent; border: 0; color: inherit; display: block; padding: 0; text-align: left; width: 100%; }
+.trace-link:hover .trace-name { text-decoration: underline; }
+
 .trace-name { display: block; font-weight: 650; max-width: 340px; overflow-wrap: anywhere; }
 
 code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; overflow-wrap: anywhere; }
@@ -70,9 +73,56 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
 .pagination { align-items: center; display: flex; gap: 12px; justify-content: flex-end; margin-top: 14px; }
 .pagination span { color: #566176; font-size: 0.84rem; min-width: 96px; text-align: center; }
 
+.trace-detail-page { margin: 0 auto; max-width: 1200px; padding: 32px; }
+.detail-page-header { margin-bottom: 24px; }
+.detail-page-header h1 { margin-top: 12px; max-width: 900px; overflow-wrap: anywhere; }
+.back-button { background: #ffffff; border: 1px solid #99a5b8; border-radius: 6px; color: #172033; min-height: 36px; padding: 6px 12px; }
+.back-button:hover { background: #eef2f9; }
+.detail-trace-id { margin-top: 10px; }
+
+.trace-summary { background: #ffffff; border: 1px solid #dce1ea; border-radius: 10px; margin-bottom: 24px; padding: 20px; }
+.trace-summary-heading { align-items: start; display: flex; gap: 20px; justify-content: space-between; }
+.trace-summary-times { color: #566176; display: grid; font-size: 0.82rem; gap: 6px; max-width: 100%; overflow-wrap: anywhere; text-align: right; }
+.trace-summary-times strong { color: #3e485b; margin-right: 6px; }
+.metric-grid { display: grid; gap: 12px; grid-template-columns: repeat(6, minmax(100px, 1fr)); margin: 22px 0 0; }
+.metric { border-top: 1px solid #e3e7ee; padding-top: 12px; }
+.metric dt { color: #566176; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.035em; text-transform: uppercase; }
+.metric dd { color: #172033; font-size: 1.02rem; font-weight: 700; margin: 5px 0 0; overflow-wrap: anywhere; }
+
+.span-hierarchy-panel { min-width: 0; }
+.section-heading { align-items: end; display: flex; gap: 16px; justify-content: space-between; margin-bottom: 12px; }
+.section-heading h2 { font-size: 1.35rem; letter-spacing: -0.025em; margin: 0; }
+.section-heading .eyebrow { margin-bottom: 5px; }
+.section-count { color: #566176; font-size: 0.84rem; white-space: nowrap; }
+.span-tree-section { min-width: 0; }
+.span-tree-scroll { background: #ffffff; border: 1px solid #dce1ea; border-radius: 10px; max-height: 70vh; min-width: 0; overflow: auto; }
+.span-tree { min-width: 0; padding: 6px 0; }
+.span-tree-row { border-top: 1px solid #edf0f5; min-width: 0; }
+.span-tree-row:first-child { border-top: 0; }
+.span-tree-row:hover { background: #fafbfe; }
+.span-tree-row.span-row-error { background: #fff7f7; border-left: 4px solid #c53a45; }
+.span-tree-row.span-row-unset { background: #fcfcfe; }
+.span-tree-row.span-row-fallback { background: #fffaf0; }
+.span-node { align-items: start; background: transparent; border: 0; color: inherit; display: grid; gap: 7px; min-width: 0; padding: 11px 16px 11px 0; text-align: left; width: 100%; }
+.span-node:hover { background: #f5f7fb; }
+.span-node[aria-pressed="true"] { box-shadow: inset 3px 0 #4d7cfe; }
+.span-node-main, .span-node-facts { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.span-node-name { font-weight: 700; max-width: 100%; overflow-wrap: anywhere; }
+.span-node-type { background: #eef2f9; border-radius: 4px; color: #3e4c67; font-size: 0.72rem; font-weight: 750; letter-spacing: 0.04em; padding: 3px 6px; }
+.span-node-facts { color: #566176; font-size: 0.79rem; }
+.span-node-facts code { display: inline; margin: 0; max-width: min(520px, 100%); }
+.span-node-relationship { color: #8a5d04; font-size: 0.78rem; overflow-wrap: anywhere; }
+.selection-note { color: #566176; font-size: 0.78rem; margin: 9px 2px 0; }
+
 @media (max-width: 720px) {
   .trace-list-page { padding: 18px; }
+  .trace-detail-page { padding: 18px; }
   .filters { align-items: stretch; flex-direction: column; }
   .name-filter { max-width: none; }
   .pagination { justify-content: center; }
+  .trace-summary-heading { align-items: stretch; flex-direction: column; }
+  .trace-summary-times { text-align: left; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  .section-heading { align-items: start; flex-direction: column; gap: 5px; }
+  .span-node { padding-right: 10px; }
 }
