@@ -1,9 +1,8 @@
-"""OpenAI Agents SDK tracing adapter.
+"""OpenAI Agents SDK tracing adapter and installation boundary.
 
-This module deliberately stops at the AgentLens SDK event boundary.  It does
-not install itself into the OpenAI tracing provider; installation semantics
-belong to Issue 09.  The processor can be constructed directly by internal
-tests or by the later installation layer.
+The processor is the Issue 08 adapter.  Issue 09 adds the small installation
+boundary that registers one processor with the OpenAI Agents SDK without
+coupling the AgentLens core package to that optional dependency.
 """
 
 from __future__ import annotations
@@ -58,6 +57,10 @@ _OPTIONAL = object()
 _RESPONSE_SKIP = object()
 _MAX_RETAINED_TRACES = 4096
 _MAX_RETAINED_SPANS = 16384
+
+_installation_lock = threading.RLock()
+_installation_mode: bool | None = None
+_installed_processor: "AgentLensOpenAIProcessor | None" = None
 
 _REQUEST_PARAMETER_KEYS = frozenset(
     {
@@ -1100,4 +1103,80 @@ class AgentLensOpenAIProcessor(_TracingProcessor):
 
 OpenAITracingProcessor = AgentLensOpenAIProcessor
 
-__all__ = ["AgentLensOpenAIProcessor", "OpenAITracingProcessor"]
+def install(*, local_only: bool = True) -> None:
+    """Install the Issue 08 processor into the OpenAI tracing provider.
+
+    The installation mode is process-global and immutable after the first
+    successful framework registration. Repeating the same mode is a no-op;
+    changing modes raises before touching the framework registration API.
+    """
+
+    if type(local_only) is not bool:
+        raise sdk.AgentLensConfigurationError("local_only must be a boolean")
+
+    global _installation_mode, _installed_processor
+    with _installation_lock:
+        if _installation_mode is not None:
+            if _installation_mode != local_only:
+                raise sdk.AgentLensConfigurationError(
+                    "OpenAI Agents tracing is already installed with a different local_only mode"
+                )
+            return
+
+        if _agents is None:
+            raise sdk.AgentLensConfigurationError(
+                "openai-agents is required for agentlens.integrations.openai_agents.install"
+            )
+
+        if local_only:
+            register = getattr(_agents, "set_trace_processors", None)
+            if not callable(register):
+                raise sdk.AgentLensConfigurationError(
+                    "the installed openai-agents package does not support set_trace_processors"
+                )
+        else:
+            register = getattr(_agents, "add_trace_processor", None)
+            if not callable(register):
+                raise sdk.AgentLensConfigurationError(
+                    "the installed openai-agents package does not support add_trace_processor"
+                )
+
+        processor = AgentLensOpenAIProcessor()
+        if local_only:
+            register([processor])
+        else:
+            register(processor)
+
+        # Publish AgentLens state only after the authoritative SDK mutation has
+        # returned successfully. A registration exception therefore remains
+        # retryable and cannot strand this module in an installed state.
+        _installed_processor = processor
+        _installation_mode = local_only
+
+
+def _reset_installation_for_tests() -> None:
+    """Reset Issue 09 process state for isolated tests; never public API."""
+
+    global _installation_mode, _installed_processor
+    with _installation_lock:
+        processor = _installed_processor
+        _installation_mode = None
+        _installed_processor = None
+
+    if processor is not None:
+        try:
+            processor.shutdown()
+        except BaseException:
+            pass
+
+    framework = _agents
+    if framework is not None:
+        reset_processors = getattr(framework, "set_trace_processors", None)
+        if callable(reset_processors):
+            try:
+                reset_processors([])
+            except BaseException:
+                pass
+
+
+__all__ = ["AgentLensOpenAIProcessor", "OpenAITracingProcessor", "install"]
