@@ -95,6 +95,18 @@ def _new_event_id() -> str:
     return str(value)
 
 
+def _with_capture_history(span: Span, capture: Capture) -> Span:
+    """Retain trusted CaptureInfo for an already-normalized observation."""
+
+    # Span construction intentionally re-sanitizes content.  The SDK stores
+    # only the sanitized value after capture, so that pass cannot rediscover
+    # whether an earlier pass removed a secret.  CaptureInfo is the trusted
+    # historical result of that earlier observation and must remain paired
+    # with its sanitized value across lifecycle events.
+    object.__setattr__(span, "capture", capture)
+    return span
+
+
 def _validate_endpoint(endpoint: Any) -> str:
     if not isinstance(endpoint, str):
         raise AgentLensConfigurationError("endpoint must be a string")
@@ -417,25 +429,28 @@ class SpanHandle:
                 capture_content=configuration.capture_content,
                 source_available=True,
             )
-            started = Span(
-                AGENTLENS_SCHEMA_VERSION,
-                trace_value.trace_id,
-                _new_span_id(),
-                parent_span_id,
-                self._type,
-                operation,
-                self._name,
-                _timestamp(),
-                None,
-                "unset",
-                None,
-                input_value,
-                None,
+            started = _with_capture_history(
+                Span(
+                    AGENTLENS_SCHEMA_VERSION,
+                    trace_value.trace_id,
+                    _new_span_id(),
+                    parent_span_id,
+                    self._type,
+                    operation,
+                    self._name,
+                    _timestamp(),
+                    None,
+                    "unset",
+                    None,
+                    input_value,
+                    None,
+                    Capture(input_capture, CaptureInfo("not_captured", "not_yet_available", False)),
+                    _manual_span_source(),
+                    {} if self._metadata_source is None else self._metadata_source,
+                    {},
+                    details,
+                ),
                 Capture(input_capture, CaptureInfo("not_captured", "not_yet_available", False)),
-                _manual_span_source(),
-                {} if self._metadata_source is None else self._metadata_source,
-                {},
-                details,
             )
             return started
 
@@ -527,25 +542,28 @@ class SpanHandle:
                             pass
             _create_lifecycle_event(
                 configuration,
-                lambda _configuration: Span(
-                    AGENTLENS_SCHEMA_VERSION,
-                    started.trace_id,
-                    started.span_id,
-                    started.parent_span_id,
-                    started.type,
-                    started.operation,
-                    started.name,
-                    started.started_at,
-                    _timestamp(),
-                    status,
-                    error,
-                    self._input,
-                    output,
+                lambda _configuration: _with_capture_history(
+                    Span(
+                        AGENTLENS_SCHEMA_VERSION,
+                        started.trace_id,
+                        started.span_id,
+                        started.parent_span_id,
+                        started.type,
+                        started.operation,
+                        started.name,
+                        started.started_at,
+                        _timestamp(),
+                        status,
+                        error,
+                        self._input,
+                        output,
+                        Capture(self._input_capture, output_capture),
+                        started.source,
+                        self._metadata,
+                        self._attributes,
+                        self._details,
+                    ),
                     Capture(self._input_capture, output_capture),
-                    started.source,
-                    self._metadata,
-                    self._attributes,
-                    self._details,
                 ),
                 "span.ended",
             )

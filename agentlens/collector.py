@@ -305,6 +305,29 @@ def _io_pair(span: Span, field_name: str) -> tuple[Any, Any]:
     return getattr(span, field_name), getattr(span.capture, field_name)
 
 
+def _replace_span_io(
+    span: Span,
+    *,
+    input_value: Any,
+    output_value: Any,
+    input_capture: Any,
+    output_capture: Any,
+) -> Span:
+    """Replace I/O while retaining validated CaptureInfo history metadata."""
+
+    merged = replace(
+        span,
+        input=input_value,
+        output=output_value,
+        capture=Capture(input_capture, output_capture),
+    )
+    # Span construction re-sanitizes already-normalized values and can clear
+    # the historical redacted bit.  The pair was validated at ingest, so
+    # restore that wire-authoritative metadata after construction.
+    object.__setattr__(merged, "capture", Capture(input_capture, output_capture))
+    return merged
+
+
 def _merge_span_io(existing: Span, incoming: Span) -> Span:
     """Apply only the §27.1 observation-preserving I/O rules."""
 
@@ -329,11 +352,12 @@ def _merge_span_io(existing: Span, incoming: Span) -> Span:
     else:
         merged_output, merged_output_capture = incoming_output, incoming_output_capture
 
-    return replace(
+    return _replace_span_io(
         incoming,
-        input=merged_input,
-        output=merged_output,
-        capture=Capture(merged_input_capture, merged_output_capture),
+        input_value=merged_input,
+        output_value=merged_output,
+        input_capture=merged_input_capture,
+        output_capture=merged_output_capture,
     )
 
 
@@ -366,11 +390,12 @@ def _merge_repeated_final_io(existing: Span, incoming: Span) -> Span:
     else:
         merged_output, merged_output_capture = incoming_output, incoming_output_capture
 
-    return replace(
+    return _replace_span_io(
         incoming,
-        input=merged_input,
-        output=merged_output,
-        capture=Capture(merged_input_capture, merged_output_capture),
+        input_value=merged_input,
+        output_value=merged_output,
+        input_capture=merged_input_capture,
+        output_capture=merged_output_capture,
     )
 
 
@@ -473,11 +498,12 @@ class Collector:
                     seen[event.event_id] = event.event_content_sha256
                     continue
 
-                outcome = self._apply_event(event, index, received_at_us)
-                if outcome == "stale":
-                    stale += 1
-                else:
-                    accepted += 1
+                # Make accepted lifecycle history visible to later events in
+                # this same transaction.  In particular, a span.started
+                # followed by span.ended in one batch must use the §27.1
+                # started-input authority.  Any later validation/conflict
+                # failure still rolls the history and entity writes back
+                # together with the transaction.
                 self.repository.record_ingest_event(
                     event_id=event.event_id,
                     event_content_sha256=event.event_content_sha256,
@@ -486,6 +512,11 @@ class Collector:
                     span_id=(event.payload.span_id if isinstance(event.payload, Span) else None),
                     received_at_us=received_at_us,
                 )
+                outcome = self._apply_event(event, index, received_at_us)
+                if outcome == "stale":
+                    stale += 1
+                else:
+                    accepted += 1
                 seen[event.event_id] = event.event_content_sha256
         return {"accepted": accepted, "duplicates": duplicates, "stale": stale}
 
@@ -546,6 +577,16 @@ class Collector:
                     payload.validate_ended()
             else:
                 payload = Span.from_dict(event["payload"])
+                # ``Span.from_dict`` re-sanitizes already normalized wire
+                # content and can therefore clear the historical
+                # CaptureInfo.redacted bit.  The CaptureInfo pair is part of
+                # the validated protocol payload; retain that wire metadata
+                # just as the storage rehydration boundary does.
+                object.__setattr__(
+                    payload,
+                    "capture",
+                    Capture.from_dict(event["payload"]["capture"]),
+                )
                 if event_type == "span.started":
                     payload.validate_started()
                 else:
@@ -650,10 +691,12 @@ class Collector:
 
         if stage < existing_stage:
             if incoming.capture.input.state == "captured":
-                enriched = replace(
+                enriched = _replace_span_io(
                     existing,
-                    input=incoming.input,
-                    capture=Capture(incoming.capture.input, existing.capture.output),
+                    input_value=incoming.input,
+                    output_value=existing.output,
+                    input_capture=incoming.capture.input,
+                    output_capture=existing.capture.output,
                 )
                 self.repository.upsert_span(
                     enriched,
