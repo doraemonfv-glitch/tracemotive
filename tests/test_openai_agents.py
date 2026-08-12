@@ -4,11 +4,11 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-import agentlens
-from agentlens import sdk
-from agentlens.canonical import CaptureInfo
-from agentlens.integrations.openai_agents import AgentLensOpenAIProcessor
-from agentlens.privacy import MAX_CONTENT_BYTES
+import tracemotive
+from tracemotive import sdk
+from tracemotive.canonical import CaptureInfo
+from tracemotive.integrations.openai_agents import OpenAITracingProcessor
+from tracemotive.privacy import MAX_CONTENT_BYTES
 
 
 class Sink:
@@ -143,8 +143,8 @@ class OpenAIAdapterTests(unittest.TestCase):
         sdk._reset_for_tests()
         self.sink = Sink()
         sdk._set_event_sink(self.sink)
-        agentlens.configure(enabled=True, capture_content=True)
-        self.processor = AgentLensOpenAIProcessor()
+        tracemotive.configure(enabled=True, capture_content=True)
+        self.processor = OpenAITracingProcessor()
 
     def tearDown(self):
         self.processor.shutdown()
@@ -290,8 +290,8 @@ class OpenAIAdapterTests(unittest.TestCase):
     def test_content_disabled_does_not_probe_source_and_started_output_is_not_yet_available(self):
         sdk._reset_for_tests()
         sdk._set_event_sink(self.sink)
-        agentlens.configure(enabled=True, capture_content=False)
-        processor = AgentLensOpenAIProcessor()
+        tracemotive.configure(enabled=True, capture_content=False)
+        processor = OpenAITracingProcessor()
 
         class Explosive:
             def __iter__(self):
@@ -386,8 +386,8 @@ class OpenAIAdapterTests(unittest.TestCase):
     def test_disabled_configuration_does_not_enrich_end_input(self):
         sdk._reset_for_tests()
         sdk._set_event_sink(self.sink)
-        agentlens.configure(enabled=True, capture_content=False)
-        processor = AgentLensOpenAIProcessor()
+        tracemotive.configure(enabled=True, capture_content=False)
+        processor = OpenAITracingProcessor()
         span = self._span(data=GenerationWithoutInput())
         processor.on_span_start(span)
         span.span_data = GenerationData(input={"must": "stay private"})
@@ -572,8 +572,8 @@ class OpenAIAdapterTests(unittest.TestCase):
     def test_disabled_response_output_is_not_probed(self):
         sdk._reset_for_tests()
         sdk._set_event_sink(self.sink)
-        agentlens.configure(enabled=True, capture_content=False)
-        processor = AgentLensOpenAIProcessor()
+        tracemotive.configure(enabled=True, capture_content=False)
+        processor = OpenAITracingProcessor()
 
         class ResponseWithExplosiveOutput:
             id = "resp-safe"

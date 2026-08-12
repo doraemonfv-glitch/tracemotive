@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from agentlens.canonical import (
+from tracemotive.canonical import (
     AGENTLENS_SCHEMA_VERSION,
     AgentDetails,
     Capture,
@@ -952,7 +952,7 @@ class CanonicalModelTests(unittest.TestCase):
         self.assertNotIn("_require_non_empty_string", tool_source)
 
     def test_canonical_package_framework_boundary(self):
-        package_root = Path(__file__).resolve().parents[1] / "agentlens" / "canonical"
+        package_root = Path(__file__).resolve().parents[1] / "tracemotive" / "canonical"
         source = "\n".join(path.read_text(encoding="utf-8") for path in package_root.glob("*.py"))
         for forbidden in (
             "import openai",
@@ -963,9 +963,9 @@ class CanonicalModelTests(unittest.TestCase):
             "from sqlite",
             "import requests",
             "import httpx",
-            "from agentlens.backend",
-            "from agentlens.transport",
-            "from agentlens.frontend",
+            "from tracemotive.backend",
+            "from tracemotive.transport",
+            "from tracemotive.frontend",
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source.lower())

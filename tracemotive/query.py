@@ -14,14 +14,14 @@ from typing import Any, Callable
 from fastapi import Request
 from starlette.responses import Response
 
-from agentlens.canonical.models import (
+from tracemotive.canonical.models import (
     _ExactNumber,
     _canonical_json_dumps,
     validate_span_id,
     validate_trace_id,
 )
-from agentlens.storage import Repository, TraceStats, TraceSummaryRecord
-from agentlens.storage.repository import timestamp_to_us
+from tracemotive.storage import Repository, TraceStats, TraceSummaryRecord
+from tracemotive.storage.repository import timestamp_to_us
 
 
 _QUERY_PARAMETERS = frozenset({"limit", "offset", "status", "name"})

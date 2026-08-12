@@ -24,7 +24,7 @@ export function traceIdFromLocation(location: Pick<Location, "hash">): string | 
   }
 }
 
-export function AgentLensApp() {
+export function TraceMotiveApp() {
   const [traceId, setTraceId] = useState<string | null>(() => traceIdFromLocation(window.location));
 
   useEffect(() => {

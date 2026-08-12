@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77,<84", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracemotive"
+version = "0.1"
+description = "Local-first tracing and debugging for AI agent execution"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "fastapi>=0.110,<1",
+]
+
+[project.optional-dependencies]
+server = [
+    "uvicorn>=0.30,<1",
+]
+openai-agents = [
+    "openai-agents>=0.17,<0.18",
+]
+
+[tool.setuptools.packages.find]
+include = ["tracemotive*"]
+exclude = ["tests*"]

@@ -6,11 +6,11 @@ import time
 import unittest
 from unittest.mock import patch
 
-import agentlens
-from agentlens import sdk
-from agentlens.canonical.models import _canonical_json_dumps
-from agentlens.storage import Repository
-from agentlens.transport import (
+import tracemotive
+from tracemotive import sdk
+from tracemotive.canonical.models import _canonical_json_dumps
+from tracemotive.storage import Repository
+from tracemotive.transport import (
     ATTEMPT_TIMEOUT_SECONDS,
     MAX_ATTEMPTS,
     MAX_BATCH_EVENTS,
@@ -107,10 +107,10 @@ class TransportTests(unittest.TestCase):
         sdk._reset_for_tests()
         try:
             with patch.object(sdk, "LocalTransport", RecordingTransport):
-                agentlens.configure(enabled=True, endpoint="http://127.0.0.1:9876")
-                with agentlens.trace("flush-probe"):
+                tracemotive.configure(enabled=True, endpoint="http://127.0.0.1:9876")
+                with tracemotive.trace("flush-probe"):
                     pass
-                result = agentlens.flush(0.5)
+                result = tracemotive.flush(0.5)
             return result, created[0]
         finally:
             sdk._reset_for_tests()
@@ -291,7 +291,7 @@ class TransportTests(unittest.TestCase):
                 transport = Transport(start=False, sleeper=sleeps.append)
                 try:
                     with patch(
-                        "agentlens.transport.http.client.HTTPConnection",
+                        "tracemotive.transport.http.client.HTTPConnection",
                         BodyFailureConnection,
                     ):
                         self.assertTrue(transport.emit(queued_event(status)))
@@ -404,7 +404,7 @@ class TransportTests(unittest.TestCase):
                     Transport(endpoint, start=False)
 
     def test_worker_startup_failure_isolated_and_does_not_leave_pending_events(self):
-        with patch("agentlens.transport.threading.Thread.start", side_effect=RuntimeError("startup")):
+        with patch("tracemotive.transport.threading.Thread.start", side_effect=RuntimeError("startup")):
             self.transport = Transport()
         self.assertEqual(self.transport.state, "stopped")
         self.assertFalse(self.transport.emit(queued_event(0)))
@@ -473,7 +473,7 @@ class TransportTests(unittest.TestCase):
                 calls.append(("close",))
 
         self.transport = Transport(start=False)
-        with patch("agentlens.transport.http.client.HTTPConnection", FakeConnection):
+        with patch("tracemotive.transport.http.client.HTTPConnection", FakeConnection):
             status = self.transport._send_attempt(b"{}", ATTEMPT_TIMEOUT_SECONDS)
         self.assertEqual(status, 200)
         connection_call = next(call for call in calls if call[0] == "connection")
@@ -501,7 +501,7 @@ class TransportTests(unittest.TestCase):
             def log_message(self, format, *args):
                 return
 
-        from agentlens.collector import Collector
+        from tracemotive.collector import Collector
 
         collector = Collector(repository)
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)

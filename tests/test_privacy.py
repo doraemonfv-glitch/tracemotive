@@ -2,7 +2,7 @@ import json
 import unittest
 from datetime import datetime
 
-from agentlens.canonical import (
+from tracemotive.canonical import (
     AGENTLENS_SCHEMA_VERSION,
     AgentDetails,
     Capture,
@@ -19,7 +19,7 @@ from agentlens.canonical import (
     ToolDetails,
     ValidationError,
 )
-from agentlens.privacy import (
+from tracemotive.privacy import (
     MAX_CONTENT_BYTES,
     MANDATORY_SENSITIVE_KEYS,
     REDACTION_PLACEHOLDER,

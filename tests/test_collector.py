@@ -2,7 +2,7 @@ from itertools import count
 from hashlib import sha256
 import unittest
 
-from agentlens.canonical import (
+from tracemotive.canonical import (
     AGENTLENS_SCHEMA_VERSION,
     Capture,
     CaptureInfo,
@@ -14,15 +14,15 @@ from agentlens.canonical import (
     Trace,
     TraceSource,
 )
-from agentlens.canonical.models import _canonical_json_dumps
-from agentlens.collector import (
+from tracemotive.canonical.models import _canonical_json_dumps
+from tracemotive.collector import (
     Collector,
     MAX_EVENT_BYTES,
     MAX_REQUEST_BYTES,
     IngestError,
 )
-from agentlens.storage import Repository
-from agentlens.storage.repository import timestamp_to_us
+from tracemotive.storage import Repository
+from tracemotive.storage.repository import timestamp_to_us
 
 
 TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"

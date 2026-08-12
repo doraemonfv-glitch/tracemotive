@@ -2,28 +2,32 @@
 
 This is the minimal Frozen Specification example. It runs one real OpenAI
 Agents SDK Agent that performs an LLM call, calls a deterministic weather tool,
-and performs a final LLM call. Any persisted AgentLens Trace can be inspected
+and performs a final LLM call. Any persisted TraceMotive Trace can be inspected
 with the existing UI.
 
 The example requires the optional `openai-agents` package, an ASGI server such
 as `uvicorn`, and an `OPENAI_API_KEY` in the environment. It makes a real model
 request; no credential is stored in the repository. The example does not enable
-AgentLens content capture.
+TraceMotive content capture.
 
-Install the example-only runtime dependencies in the active environment if
-needed:
+From the repository root, install the local package with the server and
+OpenAI integration extras:
 
-```text
-python -m pip install openai-agents uvicorn
+```powershell
+python -m pip install -e ".[server,openai-agents]"
 ```
+
+The supported `openai-agents` range is `>=0.17,<0.18`. The Python import name
+and distribution name are both `tracemotive`.
 
 Use three terminals from the repository root:
 
 1. Start the existing loopback-only Collector. Keep it running; its default
-   repository is in memory for this local example.
+   SQLite repository is `:memory:` for this local example and is cleared when
+   the Collector process stops.
 
    ```text
-   python -m uvicorn agentlens.collector:create_app --factory --host 127.0.0.1 --port 8765
+   python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
    ```
 
 2. Run the example:
@@ -32,16 +36,16 @@ Use three terminals from the repository root:
    python -m examples.openai_agents_example
    ```
 
-   It calls `agentlens.configure(enabled=True, capture_content=False)`, then
-   installs `agentlens.integrations.openai_agents.install(local_only=True)`.
-   `local_only=True` makes AgentLens the only OpenAI tracing processor for the
-   process, so AgentLens observability/tracing traffic uses the local AgentLens
+   It calls `tracemotive.configure(enabled=True, capture_content=False)`, then
+   installs `tracemotive.integrations.openai_agents.install(local_only=True)`.
+   `local_only=True` makes TraceMotive the only OpenAI tracing processor for the
+   process, so TraceMotive observability/tracing traffic uses the local TraceMotive
    path rather than preserving the OpenAI tracing exporter. This does not make
    the model request local: `Runner.run_sync` still makes a real network/API
    request to OpenAI, and model input may leave this machine.
 
-   `capture_content=False` means AgentLens does not capture this example's
-   prompt/output content into AgentLens events. It does not prevent the OpenAI
+   `capture_content=False` means TraceMotive does not capture this example's
+   prompt/output content into TraceMotive events. It does not prevent the OpenAI
    Agents SDK from sending the model input required for the real model request
    to OpenAI.
 

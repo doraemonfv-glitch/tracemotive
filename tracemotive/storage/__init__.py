@@ -1,4 +1,4 @@
-"""Internal SQLite persistence for AgentLens v0.1."""
+"""Internal SQLite persistence for TraceMotive v0.1."""
 
 from .migrations import (
     CURRENT_MIGRATION_VERSION,

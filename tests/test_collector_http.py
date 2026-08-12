@@ -1,14 +1,14 @@
 import asyncio
 import unittest
 
-from agentlens.canonical.models import CaptureInfo, _canonical_json_dumps
-from agentlens.collector import (
+from tracemotive.canonical.models import CaptureInfo, _canonical_json_dumps
+from tracemotive.collector import (
     DEFAULT_BIND_HOST,
     MAX_EVENT_BYTES,
     MAX_REQUEST_BYTES,
     create_app,
 )
-from agentlens.storage import Repository
+from tracemotive.storage import Repository
 from tests.test_collector import (
     OTHER_TRACE_ID,
     TRACE_ID,
@@ -216,7 +216,7 @@ class CollectorHTTPTests(unittest.TestCase):
     def test_exact_individual_limit_is_accepted_and_one_byte_over_rejects_whole_request(self):
         with Repository() as repository:
             app = create_app(repository)
-            collector = app.state.agentlens_collector
+            collector = app.state.tracemotive_collector
             base = event("trace.started", make_trace(metadata={"blob": ""}))
             base_size = collector._validate_event(base, 0).serialized_size
             exact = event(
@@ -251,7 +251,7 @@ class CollectorHTTPTests(unittest.TestCase):
 
             valid = event("trace.started", make_trace(OTHER_TRACE_ID))
             base_event = event("trace.started", make_trace(TRACE_ID, metadata={"blob": ""}))
-            base_size = app.state.agentlens_collector._validate_event(base_event, 0).serialized_size
+            base_size = app.state.tracemotive_collector._validate_event(base_event, 0).serialized_size
             oversized = event(
                 "trace.started",
                 make_trace(TRACE_ID, metadata={"blob": "x" * (MAX_EVENT_BYTES - base_size + 1)}),

@@ -1,4 +1,4 @@
-"""Privacy normalization for the AgentLens v0.1 canonical boundary.
+"""Privacy normalization for the TraceMotive v0.1 canonical boundary.
 
 This module intentionally has no framework, transport, storage, or network
 dependencies.  It contains only the Frozen Issue 02 redaction guarantees.

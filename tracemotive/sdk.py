@@ -1,4 +1,4 @@
-"""The framework-independent AgentLens v0.1 Python SDK core."""
+"""The framework-independent TraceMotive v0.1 Python SDK core."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ SDK_INTEGRATION_VERSION = "0.1"
 MAX_EVENT_BYTES = 1_048_576
 
 
-class AgentLensConfigurationError(ValueError):
+class TraceMotiveConfigurationError(ValueError):
     """Raised when SDK configuration is invalid or already frozen."""
 
 
@@ -59,10 +59,10 @@ _event_sink: Any = None
 _transport_sink: LocalTransport | None = None
 
 _current_trace: ContextVar[Trace | None] = ContextVar(
-    "agentlens_current_trace", default=None
+    "tracemotive_current_trace", default=None
 )
 _current_span: ContextVar["SpanHandle | None"] = ContextVar(
-    "agentlens_current_span", default=None
+    "tracemotive_current_span", default=None
 )
 
 
@@ -109,28 +109,28 @@ def _with_capture_history(span: Span, capture: Capture) -> Span:
 
 def _validate_endpoint(endpoint: Any) -> str:
     if not isinstance(endpoint, str):
-        raise AgentLensConfigurationError("endpoint must be a string")
+        raise TraceMotiveConfigurationError("endpoint must be a string")
     try:
         parsed = urlsplit(endpoint)
         hostname = parsed.hostname
         parsed.port  # Validate malformed or out-of-range ports.
     except ValueError as exc:
-        raise AgentLensConfigurationError("endpoint must be a loopback HTTP URL") from exc
+        raise TraceMotiveConfigurationError("endpoint must be a loopback HTTP URL") from exc
 
     if parsed.scheme.casefold() != "http" or hostname is None:
-        raise AgentLensConfigurationError("endpoint must be a loopback HTTP URL")
+        raise TraceMotiveConfigurationError("endpoint must be a loopback HTTP URL")
     if parsed.username is not None or parsed.password is not None:
-        raise AgentLensConfigurationError("endpoint must not contain credentials")
+        raise TraceMotiveConfigurationError("endpoint must not contain credentials")
     if hostname.casefold() == "localhost":
         return endpoint
     try:
         address = ipaddress.ip_address(hostname)
     except ValueError as exc:
-        raise AgentLensConfigurationError(
+        raise TraceMotiveConfigurationError(
             "endpoint host must be localhost or a loopback IP address"
         ) from exc
     if not address.is_loopback:
-        raise AgentLensConfigurationError(
+        raise TraceMotiveConfigurationError(
             "endpoint host must be localhost or a loopback IP address"
         )
     return endpoint
@@ -145,9 +145,9 @@ def configure(
     """Configure the process-global SDK before its first event."""
 
     if type(enabled) is not bool:
-        raise AgentLensConfigurationError("enabled must be a boolean")
+        raise TraceMotiveConfigurationError("enabled must be a boolean")
     if type(capture_content) is not bool:
-        raise AgentLensConfigurationError("capture_content must be a boolean")
+        raise TraceMotiveConfigurationError("capture_content must be a boolean")
     endpoint = _validate_endpoint(endpoint)
     requested = _Configuration(enabled, endpoint, capture_content)
 
@@ -155,8 +155,8 @@ def configure(
     with _state_lock:
         if _configuration_frozen:
             if requested != _configuration:
-                raise AgentLensConfigurationError(
-                    "AgentLens configuration is frozen after the first event"
+                raise TraceMotiveConfigurationError(
+                    "TraceMotive configuration is frozen after the first event"
                 )
             return
         _configuration = requested
@@ -677,7 +677,7 @@ def _reset_for_tests() -> None:
 
 
 __all__ = [
-    "AgentLensConfigurationError",
+    "TraceMotiveConfigurationError",
     "configure",
     "flush",
     "span",

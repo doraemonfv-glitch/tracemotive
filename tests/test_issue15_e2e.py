@@ -15,9 +15,9 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, ProxyHandler, build_opener
 
-import agentlens
-from agentlens import sdk
-from agentlens.canonical import (
+import tracemotive
+from tracemotive import sdk
+from tracemotive.canonical import (
     AGENTLENS_SCHEMA_VERSION,
     AgentDetails,
     Capture,
@@ -30,10 +30,10 @@ from agentlens.canonical import (
     Trace,
     TraceSource,
 )
-from agentlens.canonical.models import _canonical_json_dumps
-from agentlens.collector import create_app
-from agentlens.storage import Repository
-from agentlens.transport import (
+from tracemotive.canonical.models import _canonical_json_dumps
+from tracemotive.collector import create_app
+from tracemotive.storage import Repository
+from tracemotive.transport import (
     MAX_ATTEMPTS,
     QUEUE_CAPACITY,
     RETRY_BACKOFF_SECONDS,
@@ -140,7 +140,7 @@ class _LoopbackCollectorServer:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
-        self.app.state.agentlens_collector.close()
+        self.app.state.tracemotive_collector.close()
         self._closed = True
         return not self.thread.is_alive()
 
@@ -207,7 +207,7 @@ class _DropStartedCollectorServer:
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
-        self.app.state.agentlens_collector.close()
+        self.app.state.tracemotive_collector.close()
         self._closed = True
         return not self.thread.is_alive()
 
@@ -384,22 +384,22 @@ class Issue15E2ETests(unittest.TestCase):
         trace_id = None
         incomplete_span_id = None
         try:
-            agentlens.configure(
+            tracemotive.configure(
                 enabled=True,
                 endpoint=server.endpoint,
                 capture_content=True,
             )
-            with agentlens.trace(f"Issue 15 deterministic run {run_number}") as trace_value:
+            with tracemotive.trace(f"Issue 15 deterministic run {run_number}") as trace_value:
                 self.assertIsNotNone(trace_value)
                 trace_id = trace_value.trace_id
-                with agentlens.span(
+                with tracemotive.span(
                     "Agent root",
                     type="agent",
                     operation="agent.run",
                     details=AgentDetails("agent", "Fixture agent", "0.1"),
                 ):
                     try:
-                        with agentlens.span(
+                        with tracemotive.span(
                             "Initial LLM",
                             type="llm",
                             operation="llm.generate",
@@ -411,7 +411,7 @@ class Issue15E2ETests(unittest.TestCase):
                         pass
 
                     try:
-                        with agentlens.span(
+                        with tracemotive.span(
                             "Lookup tool",
                             type="tool",
                             operation="tool.call",
@@ -423,7 +423,7 @@ class Issue15E2ETests(unittest.TestCase):
                     except RuntimeError:
                         pass
 
-                    with agentlens.span(
+                    with tracemotive.span(
                         "Final LLM",
                         type="llm",
                         operation="llm.generate",
@@ -432,7 +432,7 @@ class Issue15E2ETests(unittest.TestCase):
                     ) as final_llm:
                         final_llm.set_output(None)
 
-                    incomplete = agentlens.span(
+                    incomplete = tracemotive.span(
                         "Incomplete span",
                         type="custom",
                         input={"pending": True},
@@ -440,7 +440,7 @@ class Issue15E2ETests(unittest.TestCase):
                     incomplete.__enter__()
                     incomplete_span_id = incomplete.span_id
 
-            self.assertTrue(agentlens.flush(), "public SDK flush did not reach a terminal outcome")
+            self.assertTrue(tracemotive.flush(), "public SDK flush did not reach a terminal outcome")
             self.assertIsNotNone(trace_id)
             self.assertGreaterEqual(
                 sum(path == "/api/v1/ingest" for method, path in server.requests if method == "POST"),
@@ -520,10 +520,10 @@ class Issue15E2ETests(unittest.TestCase):
     def test_deterministic_full_stack_repeats_and_survives_db_restart(self) -> None:
         trace_ids: list[str] = []
         for run_number in (1, 2):
-            with tempfile.TemporaryDirectory(prefix="agentlens-issue15-") as temporary_directory:
+            with tempfile.TemporaryDirectory(prefix="tracemotive-issue15-") as temporary_directory:
                 trace_ids.append(
                     self._assert_deterministic_stack(
-                        Path(temporary_directory) / "agentlens.sqlite",
+                        Path(temporary_directory) / "tracemotive.sqlite",
                         run_number,
                     )
                 )
@@ -532,28 +532,28 @@ class Issue15E2ETests(unittest.TestCase):
     def test_redaction_provenance_survives_terminally_dropped_start(self) -> None:
         for repeat in range(2):
             with self.subTest(repeat=repeat):
-                with tempfile.TemporaryDirectory(prefix="agentlens-issue15-drop-start-") as temporary_directory:
-                    server = _DropStartedCollectorServer(Path(temporary_directory) / "agentlens.sqlite")
+                with tempfile.TemporaryDirectory(prefix="tracemotive-issue15-drop-start-") as temporary_directory:
+                    server = _DropStartedCollectorServer(Path(temporary_directory) / "tracemotive.sqlite")
                     trace_id = None
                     span_id = None
                     try:
-                        agentlens.configure(
+                        tracemotive.configure(
                             enabled=True,
                             endpoint=server.endpoint,
                             capture_content=True,
                         )
-                        with agentlens.trace(f"Issue 15 dropped start {repeat}") as trace_value:
+                        with tracemotive.trace(f"Issue 15 dropped start {repeat}") as trace_value:
                             self.assertIsNotNone(trace_value)
                             trace_id = trace_value.trace_id
-                            self.assertTrue(agentlens.flush())
-                            with agentlens.span(
+                            self.assertTrue(tracemotive.flush())
+                            with tracemotive.span(
                                 "Dropped-start span",
                                 type="custom",
                                 input={"api_key": _SECRET},
                             ) as span_value:
                                 span_id = span_value.span_id
                                 self.assertTrue(server.start_rejected.wait(timeout=2))
-                        self.assertTrue(agentlens.flush(2))
+                        self.assertTrue(tracemotive.flush(2))
 
                         self.assertIsNotNone(trace_id)
                         self.assertIsNotNone(span_id)
@@ -575,8 +575,8 @@ class Issue15E2ETests(unittest.TestCase):
                         self.assertTrue(server.close())
 
     def test_real_http_duplicate_and_out_of_order_delivery(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="agentlens-issue15-order-") as temporary_directory:
-            server = _LoopbackCollectorServer(Path(temporary_directory) / "agentlens.sqlite")
+        with tempfile.TemporaryDirectory(prefix="tracemotive-issue15-order-") as temporary_directory:
+            server = _LoopbackCollectorServer(Path(temporary_directory) / "tracemotive.sqlite")
             try:
                 trace = _fixture_trace(_TRACE_ID)
                 span = _fixture_span(_TRACE_ID, _SPAN_ID)
@@ -619,25 +619,25 @@ class Issue15E2ETests(unittest.TestCase):
 
     def test_collector_unavailable_does_not_change_application_result_or_hang(self) -> None:
         endpoint = _closed_loopback_endpoint()
-        agentlens.configure(enabled=True, endpoint=endpoint)
+        tracemotive.configure(enabled=True, endpoint=endpoint)
         started = time.monotonic()
         with self.assertRaisesRegex(RuntimeError, "application failure"):
-            with agentlens.trace("collector unavailable application"):
+            with tracemotive.trace("collector unavailable application"):
                 raise RuntimeError("application failure")
         self.assertLess(time.monotonic() - started, 0.5)
-        self.assertIn(agentlens.flush(0.1), (True, False))
+        self.assertIn(tracemotive.flush(0.1), (True, False))
 
     def test_timeout_isolated_from_application_and_flush_deadline_is_bounded(self) -> None:
         server = _ScriptedHTTPServer(status=200, stall_first_request=True)
         try:
-            agentlens.configure(enabled=True, endpoint=server.endpoint)
+            tracemotive.configure(enabled=True, endpoint=server.endpoint)
             started = time.monotonic()
-            with agentlens.trace("timeout application"):
+            with tracemotive.trace("timeout application"):
                 pass
             self.assertLess(time.monotonic() - started, 0.5)
             self.assertTrue(server.first_request_started.wait(timeout=2))
             flush_started = time.monotonic()
-            self.assertFalse(agentlens.flush(0.05))
+            self.assertFalse(tracemotive.flush(0.05))
             self.assertLess(time.monotonic() - flush_started, 0.5)
         finally:
             server.release_first_request.set()
@@ -647,11 +647,11 @@ class Issue15E2ETests(unittest.TestCase):
     def test_queue_overflow_is_drop_newest_and_does_not_fail_application(self) -> None:
         server = _ScriptedHTTPServer(status=500, stall_first_request=True)
         try:
-            agentlens.configure(enabled=True, endpoint=server.endpoint)
-            with agentlens.trace("queue pressure application"):
+            tracemotive.configure(enabled=True, endpoint=server.endpoint)
+            with tracemotive.trace("queue pressure application"):
                 self.assertTrue(server.first_request_started.wait(timeout=2))
                 for index in range(QUEUE_CAPACITY // 2 + 128):
-                    with agentlens.span(f"overflow-{index}"):
+                    with tracemotive.span(f"overflow-{index}"):
                         pass
                 transport = sdk._transport_sink
                 self.assertIsNotNone(transport)
@@ -667,11 +667,11 @@ class Issue15E2ETests(unittest.TestCase):
         transport = Transport(server.endpoint, sleeper=sleeps.append)
         sdk._set_event_sink(transport)
         try:
-            agentlens.configure(enabled=True)
+            tracemotive.configure(enabled=True)
             with self.assertRaisesRegex(RuntimeError, "application failure"):
-                with agentlens.trace(f"HTTP {status_code} application"):
+                with tracemotive.trace(f"HTTP {status_code} application"):
                     raise RuntimeError("application failure")
-            self.assertTrue(agentlens.flush(2))
+            self.assertTrue(tracemotive.flush(2))
             self.assertEqual(server.attempts, expected_attempts)
             self.assertEqual(sleeps, expected_sleeps)
             self.assertLessEqual(server.attempts, MAX_ATTEMPTS)

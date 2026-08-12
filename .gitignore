@@ -23,6 +23,11 @@ Desktop.ini
 __pycache__/
 *.py[cod]
 
+# Python packaging output
+build/
+dist/
+*.egg-info/
+
 # Pytest cache
 .pytest_cache/
 

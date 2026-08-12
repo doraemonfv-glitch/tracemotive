@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentLensApp } from "./app";
+import { TraceMotiveApp } from "./app";
 
 const traceId = "8bf92f3577b34da6a3ce929d0e0e4736";
 const secret = "TEST-SECRET-VALUE";
@@ -47,8 +47,9 @@ describe("Issue 15 UI path", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<AgentLensApp />);
+    render(<TraceMotiveApp />);
 
+    expect(await screen.findByText("TraceMotive / Local trace observer")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: /Issue 15 deterministic trace/ }));
     expect(await screen.findByRole("heading", { name: "Issue 15 deterministic trace" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Select span Child LLM" }));

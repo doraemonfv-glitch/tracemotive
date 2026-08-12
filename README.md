@@ -1,9 +1,209 @@
-# AgentLens
+# TraceMotive
 
-The causal debugger for AI agents.
+TraceMotive v0.1 is a local-first tracing and debugging tool for AI agent
+execution. It records canonical traces and spans, stores them in a local
+SQLite-backed Collector, and displays them through a React UI.
 
-Current status: v0.1 specification / pre-implementation
+The long-term vision describes TraceMotive as “the causal debugger for AI
+agents”, but v0.1 is an observation kernel. It does not implement replay,
+RCA, Eval, cloud sync, authentication, remote collectors, or additional
+framework adapters. See [the long-term vision](docs/long-term-vision.md) for
+non-normative future context.
 
-AgentLens is a local-first open-source debugger for AI Agent execution.
+## Release and distribution status
 
-AgentLens is not implemented yet. This repository currently contains design and governance information only.
+The Python distribution and import package are both `tracemotive`. This
+checkout is prepared for the pre-release TraceMotive identity; public package
+index availability and publication remain separate maintainer-controlled
+release actions. The commands below install this checkout directly and are
+safe for local onboarding.
+
+The local package metadata uses version `0.1`, derived from the Frozen v0.1
+release identifier. The OpenAI Agents SDK range supported by this release is
+`>=0.17,<0.18`; that same range is declared in `pyproject.toml`.
+
+## Requirements
+
+- Python 3.10 or newer. The package metadata declares `Requires-Python >=3.10`;
+  this checkout was locally validated with Python 3.12.
+- Node.js `^20.19.0 || >=22.12.0`, as required by the locked Vite toolchain.
+  npm is used for the frontend.
+- An OpenAI API key is needed only for the real OpenAI Agents example, not for
+  the deterministic test suite or core SDK smoke.
+
+## Install from a fresh checkout
+
+Create and activate a virtual environment, then install the local package and
+the Uvicorn server extra.
+
+PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[server]"
+```
+
+POSIX shells:
+
+```sh
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[server]"
+```
+
+The core install contains FastAPI only as its third-party runtime dependency.
+The `server` extra adds Uvicorn. The optional `openai-agents` extra is not
+installed by the core path:
+
+```text
+python -m pip install -e ".[server,openai-agents]"
+```
+
+This is a local checkout install; it does not depend on package-index
+availability.
+
+## Start the local Collector
+
+From the repository root, keep one terminal running:
+
+```text
+python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
+```
+
+The Collector is loopback-only. Do not replace `127.0.0.1` with `0.0.0.0` or
+another remote address. Check that it is ready at
+`http://127.0.0.1:8765/api/v1/health`.
+
+The supported factory command uses the existing `create_app()` default
+repository, SQLite `:memory:`. Traces therefore live only for the lifetime of
+that Collector process and are cleared on restart. v0.1 does not expose a new
+CLI or environment-variable database-path configuration; no developer path is
+hard-coded into the package.
+
+## Start the frontend
+
+In a second terminal:
+
+```text
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Vite proxies `/api` to the loopback Collector.
+The frontend is a separate v0.1 development-server application; it is not
+embedded into the Python wheel and the Collector does not serve static UI
+files. `npm run build` verifies a production bundle locally but does not
+change that distribution model.
+
+## Minimal Python SDK usage
+
+TraceMotive and content capture are independently disabled by default. A minimal
+local trace is:
+
+```python
+import tracemotive
+
+tracemotive.configure(
+    enabled=True,
+    endpoint="http://127.0.0.1:8765",
+    capture_content=False,
+)
+
+with tracemotive.trace("demo"):
+    with tracemotive.span("work"):
+        pass
+
+tracemotive.flush()
+```
+
+The stable v0.1 Python surface is `configure`, `trace`, `span`, and `flush`.
+Tracing failures, an unavailable Collector, and queue overflow do not fail the
+instrumented Agent execution.
+
+## OpenAI Agents SDK integration and example
+
+Install the optional integration in the active environment:
+
+```text
+python -m pip install -e ".[server,openai-agents]"
+```
+
+The supported range is `openai-agents>=0.17,<0.18`. Compatibility probes were
+run against versions 0.17.0, 0.17.4, and 0.17.8 for the tracing processor
+callbacks, span-data fields, processor registration functions,
+`ModelSettings.tool_choice`, and the example's `Agent` settings.
+
+Set `OPENAI_API_KEY` in the shell used to run the example. PowerShell and POSIX
+examples are:
+
+```powershell
+$env:OPENAI_API_KEY = "<your-key>"
+```
+
+```sh
+export OPENAI_API_KEY="<your-key>"
+```
+
+With the Collector already running, execute:
+
+```text
+python -m examples.openai_agents_example
+```
+
+The example uses `local_only=True`, which replaces the OpenAI Agents SDK
+global tracing processor list with TraceMotive. This controls framework tracing
+processors; it does not make model traffic local. OpenAI model requests may
+still leave the machine. With `local_only=False`, existing OpenAI or
+third-party processors remain active and may export framework traces
+remotely. See [the integration notes](docs/openai-agents.md) and
+[the example README](examples/README.md).
+
+## Privacy and security
+
+- TraceMotive is disabled by default and has no analytics or external TraceMotive
+  telemetry. Its supported transport is the configured loopback Collector.
+- `capture_content=False` is the default even when TraceMotive is enabled. Turn
+  it on only when local content capture is intentional.
+- Model-provider traffic is separate from TraceMotive telemetry. For example,
+  the OpenAI example sends the model request to OpenAI.
+- Known/specified sensitive keys and credential-like patterns are redacted
+  according to the Frozen v0.1 policy before transport. This is not a promise
+  to detect every possible secret.
+- Captured runtime content is untrusted data. The frontend renders it as data
+  and does not execute embedded HTML, script, or arbitrary code.
+
+## Trace status and troubleshooting
+
+Trace status describes the observed top-level workflow outcome: `unset`, `ok`,
+or `error`. An error in a child Span does not automatically change the Trace
+status; the UI also reports Span error counts separately.
+
+If the example or SDK smoke reports that the Collector is unavailable, check
+the health URL, confirm the Collector terminal is still running on
+`127.0.0.1:8765`, and ensure the frontend is using `127.0.0.1:5173`. The SDK
+keeps Agent execution non-fatal when local telemetry cannot be delivered, but
+the trace may be absent or incomplete. Restarting the in-memory Collector
+clears its current traces.
+
+## Local validation
+
+Python tests:
+
+```text
+python -m unittest discover -s tests -v
+```
+
+Frontend tests and build:
+
+```text
+cd frontend
+npm ci
+npm test
+npm run build
+```
+
+Local wheel/sdist build and installed-package checks are documented in
+[release readiness](docs/release-readiness.md). No command in this repository
+publishes to PyPI, npm, or a Git hosting service.

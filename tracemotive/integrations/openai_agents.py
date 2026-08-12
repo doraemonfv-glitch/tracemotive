@@ -2,7 +2,7 @@
 
 The processor is the Issue 08 adapter.  Issue 09 adds the small installation
 boundary that registers one processor with the OpenAI Agents SDK without
-coupling the AgentLens core package to that optional dependency.
+coupling the TraceMotive core package to that optional dependency.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ _MAX_RETAINED_SPANS = 16384
 
 _installation_lock = threading.RLock()
 _installation_mode: bool | None = None
-_installed_processor: "AgentLensOpenAIProcessor | None" = None
+_installed_processor: "OpenAITracingProcessor | None" = None
 
 _REQUEST_PARAMETER_KEYS = frozenset(
     {
@@ -143,7 +143,7 @@ def _callback_timestamp() -> str:
 def _warn_missing_timestamp(field_name: str) -> None:
     # Keep the warning deterministic and free of framework values/content.
     warnings.warn(
-        f"AgentLens dropped OpenAI span callback: missing or invalid {field_name}",
+        f"TraceMotive dropped OpenAI span callback: missing or invalid {field_name}",
         RuntimeWarning,
         stacklevel=3,
     )
@@ -375,7 +375,7 @@ class _MissingTimestamp(ValueError):
     pass
 
 
-class AgentLensOpenAIProcessor(_TracingProcessor):
+class OpenAITracingProcessor(_TracingProcessor):
     """Internal Issue 08 OpenAI Agents SDK ``TracingProcessor`` adapter."""
 
     def __init__(self) -> None:
@@ -1101,8 +1101,6 @@ class AgentLensOpenAIProcessor(_TracingProcessor):
             self._span_ids.pop(key, None)
 
 
-OpenAITracingProcessor = AgentLensOpenAIProcessor
-
 def install(*, local_only: bool = True) -> None:
     """Install the Issue 08 processor into the OpenAI tracing provider.
 
@@ -1112,42 +1110,42 @@ def install(*, local_only: bool = True) -> None:
     """
 
     if type(local_only) is not bool:
-        raise sdk.AgentLensConfigurationError("local_only must be a boolean")
+        raise sdk.TraceMotiveConfigurationError("local_only must be a boolean")
 
     global _installation_mode, _installed_processor
     with _installation_lock:
         if _installation_mode is not None:
             if _installation_mode != local_only:
-                raise sdk.AgentLensConfigurationError(
+                raise sdk.TraceMotiveConfigurationError(
                     "OpenAI Agents tracing is already installed with a different local_only mode"
                 )
             return
 
         if _agents is None:
-            raise sdk.AgentLensConfigurationError(
-                "openai-agents is required for agentlens.integrations.openai_agents.install"
+            raise sdk.TraceMotiveConfigurationError(
+                "openai-agents is required for tracemotive.integrations.openai_agents.install"
             )
 
         if local_only:
             register = getattr(_agents, "set_trace_processors", None)
             if not callable(register):
-                raise sdk.AgentLensConfigurationError(
+                raise sdk.TraceMotiveConfigurationError(
                     "the installed openai-agents package does not support set_trace_processors"
                 )
         else:
             register = getattr(_agents, "add_trace_processor", None)
             if not callable(register):
-                raise sdk.AgentLensConfigurationError(
+                raise sdk.TraceMotiveConfigurationError(
                     "the installed openai-agents package does not support add_trace_processor"
                 )
 
-        processor = AgentLensOpenAIProcessor()
+        processor = OpenAITracingProcessor()
         if local_only:
             register([processor])
         else:
             register(processor)
 
-        # Publish AgentLens state only after the authoritative SDK mutation has
+        # Publish TraceMotive state only after the authoritative SDK mutation has
         # returned successfully. A registration exception therefore remains
         # retryable and cannot strand this module in an installed state.
         _installed_processor = processor
@@ -1179,4 +1177,4 @@ def _reset_installation_for_tests() -> None:
                 pass
 
 
-__all__ = ["AgentLensOpenAIProcessor", "OpenAITracingProcessor", "install"]
+__all__ = ["OpenAITracingProcessor", "install"]

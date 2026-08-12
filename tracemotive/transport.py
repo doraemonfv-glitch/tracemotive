@@ -1,4 +1,4 @@
-"""The AgentLens v0.1 bounded local transport.
+"""The TraceMotive v0.1 bounded local transport.
 
 The transport boundary accepts only already-created canonical event envelopes.
 It serializes those envelopes before queue insertion so the queue never owns
@@ -90,7 +90,7 @@ class _QueuedEvent:
 
 
 class Transport:
-    """A bounded, asynchronous, loopback-only AgentLens transport."""
+    """A bounded, asynchronous, loopback-only TraceMotive transport."""
 
     def __init__(
         self,
@@ -150,7 +150,7 @@ class Transport:
             self._state = "running"
             worker = threading.Thread(
                 target=self._worker_main,
-                name="agentlens-transport",
+                name="tracemotive-transport",
                 daemon=True,
             )
             self._worker = worker
@@ -453,7 +453,7 @@ class Transport:
     ) -> None:
         remaining = deadline - self._clock()
         if remaining <= 0:
-            raise socket.timeout("AgentLens transport attempt timed out")
+            raise socket.timeout("TraceMotive transport attempt timed out")
         sock = getattr(connection, "sock", None)
         if sock is not None:
             sock.settimeout(remaining)

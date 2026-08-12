@@ -1,2 +1,2 @@
-"""AgentLens test package."""
+"""TraceMotive test package."""
 

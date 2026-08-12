@@ -1,7 +1,7 @@
-"""Public AgentLens v0.1 Python SDK."""
+"""Public TraceMotive v0.1 Python SDK."""
 
 from .sdk import (
-    AgentLensConfigurationError,
+    TraceMotiveConfigurationError,
     configure,
     flush,
     span,
@@ -9,7 +9,7 @@ from .sdk import (
 )
 
 __all__ = [
-    "AgentLensConfigurationError",
+    "TraceMotiveConfigurationError",
     "configure",
     "flush",
     "span",

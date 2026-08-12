@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentLensApp, traceIdFromLocation, traceRoute } from "./app";
+import { TraceMotiveApp, traceIdFromLocation, traceRoute } from "./app";
 import { decodeSpanListResponse, decodeTraceDetailResponse, spanListUrl, traceDetailUrl } from "./api";
 import { TraceDetail } from "./trace-detail";
 
@@ -123,7 +123,7 @@ describe("Trace Detail", () => {
       return Promise.resolve(url.endsWith("/spans") ? response('{"items":[]}') : response(detailResponse(traceId, "Open me")));
     }));
 
-    render(<AgentLensApp />);
+    render(<TraceMotiveApp />);
     fireEvent.click(await screen.findByRole("button", { name: /Open me/ }));
     expect(window.location.hash).toBe(traceRoute(traceId));
     expect(await screen.findByText("Trace summary")).toBeTruthy();

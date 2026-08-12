@@ -1,7 +1,7 @@
-"""Canonical AgentLens v0.1 schema models.
+"""Canonical TraceMotive v0.1 schema models.
 
 This module deliberately depends only on the Python standard library.  It is
-the boundary between framework adapters and the rest of AgentLens, so it does
+the boundary between framework adapters and the rest of TraceMotive, so it does
 not import or know about any framework, transport, storage, or UI package.
 """
 

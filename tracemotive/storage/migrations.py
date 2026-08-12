@@ -1,4 +1,4 @@
-"""Forward-only SQLite migrations for AgentLens v0.1."""
+"""Forward-only SQLite migrations for TraceMotive v0.1."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 class MigrationError(RuntimeError):
-    """Raised when the AgentLens database cannot be migrated safely."""
+    """Raised when the TraceMotive database cannot be migrated safely."""
 
 
 class NewerDatabaseError(MigrationError):
-    """Raised when a database was created by a newer AgentLens version."""
+    """Raised when a database was created by a newer TraceMotive version."""
 
 
 Migration = Callable[[sqlite3.Connection], None]
@@ -158,8 +158,8 @@ def run_migrations(
     version = _current_version(connection)
     if version > CURRENT_MIGRATION_VERSION:
         raise NewerDatabaseError(
-            "a newer AgentLens version created the database; "
-            "this AgentLens version cannot open it"
+            "a newer TraceMotive version created the database; "
+            "this TraceMotive version cannot open it"
         )
 
     applied_at_us = _utc_now_us() if now_us is None else now_us

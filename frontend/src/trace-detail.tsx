@@ -148,7 +148,7 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
         <button type="button" className="back-button" onClick={onBack}>
           Back to traces
         </button>
-        <p className="eyebrow">AgentLens / Trace detail</p>
+        <p className="eyebrow">TraceMotive / Trace detail</p>
         <h1>{detail.kind === "loaded" ? detail.response.trace.name : "Trace detail"}</h1>
         <code className="detail-trace-id">{traceId}</code>
       </header>

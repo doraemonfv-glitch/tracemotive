@@ -1,8 +1,8 @@
-# AgentLens Repository Instructions
+# TraceMotive Repository Instructions
 
 ## Project
 
-AgentLens
+TraceMotive
 
 ## Long-term vision
 
@@ -10,7 +10,7 @@ AgentLens
 
 ## Current target
 
-AgentLens v0.1 observation Kernel
+TraceMotive v0.1 observation Kernel
 
 ## Authority precedence
 
@@ -57,11 +57,11 @@ UI
 
 ## Security and privacy invariants
 
-- AgentLens is disabled by default.
+- TraceMotive is disabled by default.
 - Content capture is independently disabled by default.
 - Redaction occurs before the transport queue.
 - Known API keys and credentials must not be persisted.
-- AgentLens must not include analytics or external telemetry.
+- TraceMotive must not include analytics or external telemetry.
 - The HTTP collector is loopback-only.
 - Never bind the documented v0.1 server to `0.0.0.0`.
 - Captured Agent content is untrusted.

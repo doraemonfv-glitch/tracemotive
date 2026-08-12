@@ -1,7 +1,7 @@
 """Minimal Issue 14 OpenAI Agents SDK example.
 
 This example intentionally uses the real OpenAI Agents SDK execution path:
-Agent -> LLM -> Tool -> LLM.  AgentLens remains content-off by default, and
+Agent -> LLM -> Tool -> LLM.  TraceMotive remains content-off by default, and
 the optional framework dependency is imported only when the example runs.
 """
 
@@ -10,8 +10,8 @@ from __future__ import annotations
 from urllib.error import URLError
 from urllib.request import urlopen
 
-import agentlens
-import agentlens.integrations.openai_agents
+import tracemotive
+import tracemotive.integrations.openai_agents
 
 
 COLLECTOR_ENDPOINT = "http://127.0.0.1:8765"
@@ -37,7 +37,7 @@ def main() -> None:
 
     if not _collector_available():
         raise SystemExit(
-            "The AgentLens collector is unavailable at "
+            "The TraceMotive collector is unavailable at "
             f"{COLLECTOR_ENDPOINT}. Start it before running the example."
         )
 
@@ -49,12 +49,12 @@ def main() -> None:
             return "Tokyo: clear skies, 21 degrees Celsius."
         return f"{city}: the demo forecast is unavailable."
 
-    agentlens.configure(
+    tracemotive.configure(
         enabled=True,
         endpoint=COLLECTOR_ENDPOINT,
         capture_content=False,
     )
-    agentlens.integrations.openai_agents.install(local_only=True)
+    tracemotive.integrations.openai_agents.install(local_only=True)
 
     agent = Agent(
         name="Weather assistant",
@@ -73,19 +73,19 @@ def main() -> None:
     except Exception as exc:
         raise SystemExit(
             "The Agent run failed. Check that OPENAI_API_KEY is available and "
-            "the local AgentLens collector is running."
+            "the local TraceMotive collector is running."
         ) from exc
     finally:
-        flushed = agentlens.flush()
+        flushed = tracemotive.flush()
 
     if flushed:
         print(
-            "AgentLens example finished; events reached a terminal transport "
+            "TraceMotive example finished; events reached a terminal transport "
             f"outcome. Open {UI_URL} to inspect any persisted Trace."
         )
     else:
         print(
-            "Agent run finished, but AgentLens could not flush its local "
+            "Agent run finished, but TraceMotive could not flush its local "
             f"events. Check the collector at {COLLECTOR_ENDPOINT}."
         )
 

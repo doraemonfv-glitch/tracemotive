@@ -1,4 +1,4 @@
-"""Framework-independent AgentLens v0.1 canonical models."""
+"""Framework-independent TraceMotive v0.1 canonical models."""
 
 from .models import (
     AGENTLENS_SCHEMA_VERSION,

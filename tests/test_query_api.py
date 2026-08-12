@@ -5,10 +5,10 @@ import json
 from urllib.parse import urlsplit
 import unittest
 
-from agentlens.canonical import CaptureInfo, Error, Trace
-from agentlens.canonical.models import _ExactNumber, _canonical_json_dumps
-from agentlens.collector import DEFAULT_BIND_HOST, create_app
-from agentlens.storage import Repository
+from tracemotive.canonical import CaptureInfo, Error, Trace
+from tracemotive.canonical.models import _ExactNumber, _canonical_json_dumps
+from tracemotive.collector import DEFAULT_BIND_HOST, create_app
+from tracemotive.storage import Repository
 from tests.test_collector import (
     CHILD_SPAN_ID,
     OTHER_TRACE_ID,

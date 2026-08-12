@@ -1,4 +1,4 @@
-"""Framework-independent AgentLens v0.1 collector ingest service.
+"""Framework-independent TraceMotive v0.1 collector ingest service.
 
 This module is the boundary between a parsed ingest protocol request and the
 Issue 03 SQLite repository.  It deliberately does not contain an HTTP server
@@ -13,7 +13,7 @@ from uuid import UUID
 import re
 import time
 
-from agentlens.canonical.models import (
+from tracemotive.canonical.models import (
     Capture,
     Span,
     Trace,
@@ -22,7 +22,7 @@ from agentlens.canonical.models import (
     _parse_canonical_json,
     validate_timestamp,
 )
-from agentlens.storage.repository import EntityConflictError, Repository, timestamp_to_us
+from tracemotive.storage.repository import EntityConflictError, Repository, timestamp_to_us
 
 
 PROTOCOL_VERSION = 1
@@ -757,23 +757,23 @@ def create_app(
     """
 
     if bind_host != DEFAULT_BIND_HOST:
-        raise ValueError("AgentLens v0.1 collector must bind to 127.0.0.1")
+        raise ValueError("TraceMotive v0.1 collector must bind to 127.0.0.1")
     try:
         from fastapi import FastAPI, Request
         from fastapi.responses import JSONResponse
     except ImportError as exc:  # pragma: no cover - exercised by packaging
         raise RuntimeError(
-            "FastAPI is required for the AgentLens Issue 04 HTTP boundary"
+            "FastAPI is required for the TraceMotive Issue 04 HTTP boundary"
         ) from exc
 
     collector = Collector(repository, clock=clock)
     app = FastAPI(
-        title="AgentLens Collector",
+        title="TraceMotive Collector",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
     )
-    app.state.agentlens_collector = collector
+    app.state.tracemotive_collector = collector
 
     @app.post("/api/v1/ingest")
     async def ingest(request: Request) -> JSONResponse:
@@ -784,7 +784,7 @@ def create_app(
             return JSONResponse(status_code=exc.status_code, content=exc.body())
         return JSONResponse(status_code=200, content=result)
 
-    from agentlens.query import register_query_routes
+    from tracemotive.query import register_query_routes
 
     register_query_routes(app, collector.repository)
     return app

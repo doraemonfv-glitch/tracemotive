@@ -1,4 +1,4 @@
-# AgentLens Long-Term Vision
+# TraceMotive Long-Term Vision
 
 > **NON-NORMATIVE**
 

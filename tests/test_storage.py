@@ -5,7 +5,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from agentlens.canonical import (
+from tracemotive.canonical import (
     AGENTLENS_SCHEMA_VERSION,
     Capture,
     CaptureInfo,
@@ -18,7 +18,7 @@ from agentlens.canonical import (
     TraceSource,
     ValidationError,
 )
-from agentlens.storage import (
+from tracemotive.storage import (
     CURRENT_MIGRATION_VERSION,
     EntityConflictError,
     NewerDatabaseError,
@@ -162,7 +162,7 @@ class StorageTests(unittest.TestCase):
 
     def test_migration_runner_persists_version_and_survives_restart(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = str(Path(directory) / "agentlens.db")
+            path = str(Path(directory) / "tracemotive.db")
             with Repository(path) as repository:
                 repository.upsert_trace(make_trace(), now_us=100)
                 version_rows = repository.connection.execute(
@@ -187,7 +187,7 @@ class StorageTests(unittest.TestCase):
             before = Path(path).read_bytes()
             with self.assertRaises(NewerDatabaseError) as context:
                 Repository(path)
-            self.assertIn("newer AgentLens version created the database", str(context.exception))
+            self.assertIn("newer TraceMotive version created the database", str(context.exception))
             self.assertEqual(Path(path).read_bytes(), before)
 
     def test_failed_migration_rolls_back_and_refuses_startup(self):

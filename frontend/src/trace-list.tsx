@@ -118,7 +118,7 @@ export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (tr
   return (
     <main className="trace-list-page">
       <header className="page-header">
-        <p className="eyebrow">AgentLens / Local trace observer</p>
+        <p className="eyebrow">TraceMotive / Local trace observer</p>
         <h1>Traces</h1>
       </header>
 

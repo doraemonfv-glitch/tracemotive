@@ -7,8 +7,8 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
-import agentlens
-from agentlens.integrations import openai_agents
+import tracemotive
+from tracemotive.integrations import openai_agents
 
 
 class _Processor:
@@ -92,7 +92,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         self.assertEqual(len(self.fake_agents.processors), 1)
         self.assertIs(self.fake_agents.processors[0], openai_agents._installed_processor)
         self.assertIsInstance(
-            self.fake_agents.processors[0], openai_agents.AgentLensOpenAIProcessor
+            self.fake_agents.processors[0], openai_agents.OpenAITracingProcessor
         )
         self.assertEqual([call[0] for call in self.fake_agents.calls], ["set"])
 
@@ -105,7 +105,7 @@ class OpenAIInstallationTests(unittest.TestCase):
 
         self.assertEqual(self.fake_agents.processors[:2], [first, second])
         self.assertIsInstance(
-            self.fake_agents.processors[2], openai_agents.AgentLensOpenAIProcessor
+            self.fake_agents.processors[2], openai_agents.OpenAITracingProcessor
         )
         self.assertEqual([call[0] for call in self.fake_agents.calls], ["add"])
 
@@ -135,7 +135,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         calls = list(self.fake_agents.calls)
 
         with self.assertRaisesRegex(
-            agentlens.AgentLensConfigurationError,
+            tracemotive.TraceMotiveConfigurationError,
             "already installed with a different local_only mode",
         ):
             openai_agents.install(local_only=False)
@@ -148,7 +148,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         before = list(self.fake_agents.processors)
         calls = list(self.fake_agents.calls)
 
-        with self.assertRaises(agentlens.AgentLensConfigurationError):
+        with self.assertRaises(tracemotive.TraceMotiveConfigurationError):
             openai_agents.install(local_only=True)
 
         self.assertEqual(self.fake_agents.processors, before)
@@ -191,7 +191,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         self.assertEqual(len(self.fake_agents.processors), 1)
         self.assertEqual(
             sum(
-                isinstance(processor, openai_agents.AgentLensOpenAIProcessor)
+                isinstance(processor, openai_agents.OpenAITracingProcessor)
                 for processor in self.fake_agents.processors
             ),
             1,
@@ -222,7 +222,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         self.assertEqual(len(outcomes), 2)
         self.assertIsInstance(
             next(outcome for outcome in outcomes if outcome is not None),
-            agentlens.AgentLensConfigurationError,
+            tracemotive.TraceMotiveConfigurationError,
         )
         self.assertEqual(len(self.fake_agents.processors), 1)
         self.assertEqual(
@@ -255,14 +255,14 @@ class OpenAIInstallationTests(unittest.TestCase):
             failures = [error for _, error in outcomes if error is not None]
             self.assertEqual(len(winners), 1)
             self.assertEqual(len(failures), 1)
-            self.assertIsInstance(failures[0], agentlens.AgentLensConfigurationError)
+            self.assertIsInstance(failures[0], tracemotive.TraceMotiveConfigurationError)
             self.assertEqual(len(self.fake_agents.calls), 1)
             self.assertEqual(openai_agents._installation_mode, winners[0])
 
             installed = [
                 processor
                 for processor in self.fake_agents.processors
-                if isinstance(processor, openai_agents.AgentLensOpenAIProcessor)
+                if isinstance(processor, openai_agents.OpenAITracingProcessor)
             ]
             self.assertEqual(len(installed), 1)
             if winners[0]:
@@ -289,7 +289,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(len(self.fake_agents.processors), 1)
         self.assertIsInstance(
-            self.fake_agents.processors[0], openai_agents.AgentLensOpenAIProcessor
+            self.fake_agents.processors[0], openai_agents.OpenAITracingProcessor
         )
 
     def test_replacement_is_observable_through_callback_delivery(self):
@@ -329,7 +329,7 @@ class OpenAIInstallationTests(unittest.TestCase):
         self.assertEqual(span_start.call_count, 2)
         self.assertEqual(
             sum(
-                isinstance(processor, openai_agents.AgentLensOpenAIProcessor)
+                isinstance(processor, openai_agents.OpenAITracingProcessor)
                 for processor in self.fake_agents.processors
             ),
             1,
@@ -376,7 +376,7 @@ class OpenAIInstallationTests(unittest.TestCase):
 
     def test_invalid_mode_is_rejected_before_framework_registration(self):
         with self.assertRaisesRegex(
-            agentlens.AgentLensConfigurationError,
+            tracemotive.TraceMotiveConfigurationError,
             "local_only must be a boolean",
         ):
             openai_agents.install(local_only=1)
@@ -384,11 +384,11 @@ class OpenAIInstallationTests(unittest.TestCase):
 
     def test_missing_optional_dependency_fails_only_at_install_boundary(self):
         with patch.object(openai_agents, "_agents", None):
-            import agentlens as imported_core
+            import tracemotive as imported_core
 
-            self.assertIs(imported_core, agentlens)
+            self.assertIs(imported_core, tracemotive)
             with self.assertRaisesRegex(
-                agentlens.AgentLensConfigurationError,
+                tracemotive.TraceMotiveConfigurationError,
                 "openai-agents is required",
             ):
                 openai_agents.install()
@@ -398,8 +398,8 @@ class OpenAIInstallationTests(unittest.TestCase):
         environment.pop("PYTHONPATH", None)
         environment.pop("PYTHONHOME", None)
         code = """
-import agentlens
-from agentlens.integrations import openai_agents
+import tracemotive
+from tracemotive.integrations import openai_agents
 assert openai_agents._agents is None
 assert openai_agents._installation_mode is None
 assert openai_agents._installed_processor is None
@@ -407,8 +407,8 @@ assert openai_agents._installed_processor is None
 def assert_install_fails_without_publishing_state():
     try:
         openai_agents.install()
-    except agentlens.AgentLensConfigurationError as error:
-        assert str(error) == "openai-agents is required for agentlens.integrations.openai_agents.install"
+    except tracemotive.TraceMotiveConfigurationError as error:
+        assert str(error) == "openai-agents is required for tracemotive.integrations.openai_agents.install"
     else:
         raise AssertionError("install unexpectedly succeeded without openai-agents")
     assert openai_agents._installation_mode is None
@@ -433,7 +433,7 @@ print("fresh-optional-dependency-check-ok")
         )
         self.assertIn("fresh-optional-dependency-check-ok", completed.stdout)
 
-    def test_install_does_not_enable_agentlens_or_create_transport(self):
+    def test_install_does_not_enable_tracemotive_or_create_transport(self):
         self.assertFalse(openai_agents.sdk._configuration.enabled)
         self.assertIsNone(openai_agents.sdk._transport_sink)
 
@@ -446,7 +446,7 @@ print("fresh-optional-dependency-check-ok")
         openai_agents.install()
 
         installed = openai_agents._installed_processor
-        self.assertIsInstance(installed, openai_agents.AgentLensOpenAIProcessor)
+        self.assertIsInstance(installed, openai_agents.OpenAITracingProcessor)
         self.assertIs(self.fake_agents.processors[0], installed)
 
 

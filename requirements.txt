@@ -1,1 +1,3 @@
-fastapi>=0.110,<1
+# Checkout convenience install. Runtime metadata is authoritative in
+# pyproject.toml; this also installs the documented local Collector server.
+-e .[server]

@@ -36,20 +36,20 @@ class Issue14ExampleTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "collector is unavailable"):
                 example.main()
 
-    def test_example_uses_public_agentlens_wiring_only(self):
+    def test_example_uses_public_tracemotive_wiring_only(self):
         example = importlib.import_module("examples.openai_agents_example")
         source = inspect.getsource(example)
 
-        self.assertIn("agentlens.configure", source)
+        self.assertIn("tracemotive.configure", source)
         self.assertIn(
-            "agentlens.integrations.openai_agents.install(local_only=True)",
+            "tracemotive.integrations.openai_agents.install(local_only=True)",
             source,
         )
         self.assertIn("capture_content=False", source)
         self.assertIn("Runner.run_sync", source)
         self.assertIn("@function_tool", source)
         for forbidden in (
-            "AgentLensOpenAIProcessor",
+            "OpenAITracingProcessor",
             "LocalTransport",
             "Repository",
             "create_app",
@@ -92,9 +92,9 @@ class Issue14ExampleTests(unittest.TestCase):
         with (
             patch.dict("sys.modules", {"agents": fake_agents}),
             patch.object(example, "_collector_available", return_value=True) as collector_available,
-            patch.object(example.agentlens, "configure") as configure,
-            patch.object(example.agentlens.integrations.openai_agents, "install") as install,
-            patch.object(example.agentlens, "flush", return_value=True) as flush,
+            patch.object(example.tracemotive, "configure") as configure,
+            patch.object(example.tracemotive.integrations.openai_agents, "install") as install,
+            patch.object(example.tracemotive, "flush", return_value=True) as flush,
         ):
             example.main()
 
@@ -148,9 +148,9 @@ class Issue14ExampleTests(unittest.TestCase):
         with (
             patch.dict("sys.modules", {"agents": fake_agents}),
             patch.object(example, "_collector_available", return_value=True),
-            patch.object(example.agentlens, "configure"),
-            patch.object(example.agentlens.integrations.openai_agents, "install"),
-            patch.object(example.agentlens, "flush", return_value=True),
+            patch.object(example.tracemotive, "configure"),
+            patch.object(example.tracemotive.integrations.openai_agents, "install"),
+            patch.object(example.tracemotive, "flush", return_value=True),
             redirect_stdout(output),
         ):
             example.main()
@@ -187,9 +187,9 @@ class Issue14ExampleTests(unittest.TestCase):
         with (
             patch.dict("sys.modules", {"agents": fake_agents}),
             patch.object(example, "_collector_available", return_value=True),
-            patch.object(example.agentlens, "configure"),
-            patch.object(example.agentlens.integrations.openai_agents, "install"),
-            patch.object(example.agentlens, "flush", return_value=False),
+            patch.object(example.tracemotive, "configure"),
+            patch.object(example.tracemotive.integrations.openai_agents, "install"),
+            patch.object(example.tracemotive, "flush", return_value=False),
             redirect_stdout(output),
         ):
             example.main()
@@ -205,11 +205,11 @@ class Issue14ExampleTests(unittest.TestCase):
         normalized_readme = " ".join(readme.split())
 
         for required in (
-            "agentlens.collector:create_app",
+            "tracemotive.collector:create_app",
             "python -m examples.openai_agents_example",
-            "agentlens.configure(enabled=True, capture_content=False)",
-            "agentlens.integrations.openai_agents.install(local_only=True)",
-            "AgentLens observability/tracing traffic",
+            "tracemotive.configure(enabled=True, capture_content=False)",
+            "tracemotive.integrations.openai_agents.install(local_only=True)",
+            "TraceMotive observability/tracing traffic",
             "real network/API",
             "model input may leave this machine",
             "does not capture this example's",

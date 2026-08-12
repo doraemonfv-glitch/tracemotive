@@ -1,4 +1,4 @@
-"""Canonical AgentLens repository backed by SQLite.
+"""Canonical TraceMotive repository backed by SQLite.
 
 This module is an internal persistence boundary.  It stores only canonical
 models and JSON values, never framework objects.
@@ -15,7 +15,7 @@ from threading import RLock
 from typing import Any, Callable, Iterator, TypeVar
 from uuid import UUID
 
-from agentlens.canonical.models import (
+from tracemotive.canonical.models import (
     Capture,
     CaptureInfo,
     Error,
@@ -265,7 +265,7 @@ def _row_span_values(
 
 
 class Repository:
-    """Thread-safe internal repository for canonical AgentLens state."""
+    """Thread-safe internal repository for canonical TraceMotive state."""
 
     def __init__(self, path: str = ":memory:") -> None:
         self.path = path
@@ -854,7 +854,7 @@ class Repository:
 
 
 def _model_from_json(value: str, field_name: str) -> Any:
-    from agentlens.canonical.models import SpanSource, TraceSource
+    from tracemotive.canonical.models import SpanSource, TraceSource
 
     parsed = _parsed_json(value)
     if field_name == "source":
