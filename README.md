@@ -14,9 +14,9 @@ non-normative future context.
 
 ## Release and distribution status
 
-The Python distribution and import package are both `tracemotive`. TraceMotive
-v0.1 is published on PyPI as `tracemotive==0.1`, and `0.1` is the current
-release version. For normal use, install the released package from PyPI as
+The Python distribution and import package are both `tracemotive`. Releases
+are distributed on PyPI as `tracemotive`. This checkout declares package
+version `0.1.1`. For normal use, install the released package from PyPI as
 described below. The fresh-checkout instructions later in this README are for
 contributors and local development.
 
@@ -25,7 +25,7 @@ same range is declared in `pyproject.toml`.
 
 ## Install from PyPI
 
-For a normal installation of the released v0.1 package:
+For a normal installation of the released package:
 
 ```text
 pip install tracemotive

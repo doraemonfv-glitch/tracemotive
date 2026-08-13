@@ -30,7 +30,7 @@ Security and privacy reports may involve, for example:
 
 ## Supported versions
 
-The current public TraceMotive v0.1 release is supported for security reports.
+The latest public TraceMotive release is supported for security reports.
 
 ## Disclosure
 

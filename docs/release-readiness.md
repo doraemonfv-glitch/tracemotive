@@ -1,10 +1,10 @@
-# v0.1 release readiness
+# v0.1.1 release readiness
 
-Issue 16 validation is local-only. These commands build and inspect artifacts;
-they do not upload, publish, create a release, or push a tag.
+This checklist is local-only. These commands build and inspect artifacts; they
+do not upload, publish, create a release, or push a tag.
 
 The Python distribution and import package are both `tracemotive`, with
-version `0.1`. Public package-index publication remains a separate
+version `0.1.1`. Public package-index publication remains a separate
 maintainer-controlled release action; this checklist validates the local
 artifacts and installed runtime under the final pre-release identity.
 

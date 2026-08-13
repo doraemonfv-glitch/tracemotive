@@ -253,6 +253,8 @@ def _parse_timestamp(value: Any, field_name: str) -> tuple[str, datetime]:
         _fail(
             f"{field_name} must be an RFC 3339 UTC timestamp using Z and at most microseconds"
         )
+    if int(value[11:13]) > 23:
+        _fail(f"{field_name} is not a valid timestamp")
     try:
         parsed = datetime.fromisoformat(value[:-1] + "+00:00")
     except ValueError as exc:
