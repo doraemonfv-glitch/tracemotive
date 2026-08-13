@@ -12,15 +12,42 @@ non-normative future context.
 
 ## Release and distribution status
 
-The Python distribution and import package are both `tracemotive`. This
-checkout is prepared for the pre-release TraceMotive identity; public package
-index availability and publication remain separate maintainer-controlled
-release actions. The commands below install this checkout directly and are
-safe for local onboarding.
+The Python distribution and import package are both `tracemotive`. TraceMotive
+v0.1 is published on PyPI as `tracemotive==0.1`, and `0.1` is the current
+release version. For normal use, install the released package from PyPI as
+described below. The fresh-checkout instructions later in this README are for
+contributors and local development.
 
-The local package metadata uses version `0.1`, derived from the Frozen v0.1
-release identifier. The OpenAI Agents SDK range supported by this release is
-`>=0.17,<0.18`; that same range is declared in `pyproject.toml`.
+The OpenAI Agents SDK range supported by this release is `>=0.17,<0.18`; that
+same range is declared in `pyproject.toml`.
+
+## Install from PyPI
+
+For a normal installation of the released v0.1 package:
+
+```text
+pip install tracemotive
+```
+
+If you will run the local Collector, install the `server` extra:
+
+```text
+pip install "tracemotive[server]"
+```
+
+The OpenAI Agents SDK integration is optional. To use it, install the
+`openai-agents` extra:
+
+```text
+pip install "tracemotive[openai-agents]"
+```
+
+To use both the Collector and the OpenAI Agents SDK integration, install both
+extras together:
+
+```text
+pip install "tracemotive[server,openai-agents]"
+```
 
 ## Requirements
 
@@ -33,8 +60,9 @@ release identifier. The OpenAI Agents SDK range supported by this release is
 
 ## Install from a fresh checkout
 
-Create and activate a virtual environment, then install the local package and
-the Uvicorn server extra.
+For contributors and local development, create and activate a virtual
+environment, then install the package from this repository and the Uvicorn
+server extra.
 
 PowerShell:
 
@@ -60,8 +88,8 @@ installed by the core path:
 python -m pip install -e ".[server,openai-agents]"
 ```
 
-This is a local checkout install; it does not depend on package-index
-availability.
+This is a development install from a repository checkout, distinct from the
+PyPI installation above.
 
 ## Start the local Collector
 
@@ -124,11 +152,15 @@ instrumented Agent execution.
 
 ## OpenAI Agents SDK integration and example
 
-Install the optional integration in the active environment:
+For a PyPI installation, install the optional integration in the active
+environment:
 
 ```text
-python -m pip install -e ".[server,openai-agents]"
+pip install "tracemotive[openai-agents]"
 ```
+
+If the Collector is also being installed from PyPI, use
+`tracemotive[server,openai-agents]` instead.
 
 The supported range is `openai-agents>=0.17,<0.18`. Compatibility probes were
 run against versions 0.17.0, 0.17.4, and 0.17.8 for the tracing processor
@@ -205,5 +237,6 @@ npm run build
 ```
 
 Local wheel/sdist build and installed-package checks are documented in
-[release readiness](docs/release-readiness.md). No command in this repository
-publishes to PyPI, npm, or a Git hosting service.
+[release readiness](docs/release-readiness.md). These are maintainer and
+developer validation steps; end users should install TraceMotive from PyPI as
+described above.
