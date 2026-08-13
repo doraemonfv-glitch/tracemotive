@@ -4,6 +4,8 @@ TraceMotive v0.1 is a local-first tracing and debugging tool for AI agent
 execution. It records canonical traces and spans, stores them in a local
 SQLite-backed Collector, and displays them through a React UI.
 
+![TraceMotive demo](docs/assets/tracemotive-demo.gif)
+
 The long-term vision describes TraceMotive as “the causal debugger for AI
 agents”, but v0.1 is an observation kernel. It does not implement replay,
 RCA, Eval, cloud sync, authentication, remote collectors, or additional
