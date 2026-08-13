@@ -4,12 +4,12 @@ TraceMotive v0.1 is a local-first tracing and debugging tool for AI agent
 execution. It records canonical traces and spans, stores them in a local
 SQLite-backed Collector, and displays them through a React UI.
 
-![TraceMotive demo](docs/assets/tracemotive-demo.gif)
+![TraceMotive demo](https://raw.githubusercontent.com/doraemonfv-glitch/tracemotive/main/docs/assets/tracemotive-demo.gif)
 
 The long-term vision describes TraceMotive as “the causal debugger for AI
 agents”, but v0.1 is an observation kernel. It does not implement replay,
 RCA, Eval, cloud sync, authentication, remote collectors, or additional
-framework adapters. See [the long-term vision](docs/long-term-vision.md) for
+framework adapters. See [the long-term vision](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/long-term-vision.md) for
 non-normative future context.
 
 ## Release and distribution status
@@ -191,8 +191,8 @@ global tracing processor list with TraceMotive. This controls framework tracing
 processors; it does not make model traffic local. OpenAI model requests may
 still leave the machine. With `local_only=False`, existing OpenAI or
 third-party processors remain active and may export framework traces
-remotely. See [the integration notes](docs/openai-agents.md) and
-[the example README](examples/README.md).
+remotely. See [the integration notes](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/openai-agents.md) and
+[the example README](https://github.com/doraemonfv-glitch/tracemotive/blob/main/examples/README.md).
 
 ## Privacy and security
 
@@ -239,19 +239,19 @@ npm run build
 ```
 
 Local wheel/sdist build and installed-package checks are documented in
-[release readiness](docs/release-readiness.md). These are maintainer and
+[release readiness](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/release-readiness.md). These are maintainer and
 developer validation steps; end users should install TraceMotive from PyPI as
 described above.
 
 ## Contributing
 
 Contributions are welcome. Before making changes, read
-[CONTRIBUTING.md](CONTRIBUTING.md). New contributors can start with issues
+[CONTRIBUTING.md](https://github.com/doraemonfv-glitch/tracemotive/blob/main/CONTRIBUTING.md). New contributors can start with issues
 labeled [good first issue](https://github.com/doraemonfv-glitch/tracemotive/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 Keep changes focused and within the Frozen v0.1 contract.
 
 ## Security
 
 Do not report security vulnerabilities in public Issues or pull requests.
-Read [SECURITY.md](SECURITY.md) and use GitHub Private Vulnerability Reporting
+Read [SECURITY.md](https://github.com/doraemonfv-glitch/tracemotive/blob/main/SECURITY.md) and use GitHub Private Vulnerability Reporting
 from the repository Security page.
