@@ -1,0 +1,125 @@
+name: Bug report
+description: Report a reproducible problem with TraceMotive
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem.
+
+        If this may be a security vulnerability, do not use this form. Open the repository's **Security** page and use GitHub's Private Vulnerability Reporting instead.
+
+  - type: checkboxes
+    id: before-submitting
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have searched existing Issues for duplicates.
+          required: true
+        - label: I have confirmed that this is not a security vulnerability.
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the problem.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Python SDK
+        - Collector
+        - Query API
+        - OpenAI Agents integration
+        - Frontend
+        - Installation / packaging
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide minimal reproduction steps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: TraceMotive version or commit
+      placeholder: "0.1 or commit SHA"
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.5"
+    validations:
+      required: false
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: Provide this for frontend-related reports.
+      placeholder: "22.12.0"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Optional. Redact API keys, tokens, passwords, personal data, and real captured Agent content before posting.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add screenshots or other relevant information if helpful.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution-guidelines
+    attributes:
+      label: Contribution guidelines
+      options:
+        - label: I have reviewed the relevant guidance in CONTRIBUTING.md.
+          required: true
