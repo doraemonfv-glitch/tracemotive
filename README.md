@@ -242,3 +242,16 @@ Local wheel/sdist build and installed-package checks are documented in
 [release readiness](docs/release-readiness.md). These are maintainer and
 developer validation steps; end users should install TraceMotive from PyPI as
 described above.
+
+## Contributing
+
+Contributions are welcome. Before making changes, read
+[CONTRIBUTING.md](CONTRIBUTING.md). New contributors can start with issues
+labeled [good first issue](https://github.com/doraemonfv-glitch/tracemotive/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+Keep changes focused and within the Frozen v0.1 contract.
+
+## Security
+
+Do not report security vulnerabilities in public Issues or pull requests.
+Read [SECURITY.md](SECURITY.md) and use GitHub Private Vulnerability Reporting
+from the repository Security page.
