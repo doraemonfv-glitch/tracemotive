@@ -1,5 +1,7 @@
 include LICENSE README.md pyproject.toml
 recursive-include tracemotive *.py
+recursive-include tracemotive/ui *.html
+recursive-include tracemotive/ui/assets *
 prune tests
 prune docs
 prune examples

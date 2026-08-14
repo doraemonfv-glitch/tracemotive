@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "package:ui": "python ../scripts/package_frontend.py",
+    "build:package": "npm run build && npm run package:ui",
     "test": "vitest run"
   },
   "dependencies": {

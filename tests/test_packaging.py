@@ -37,6 +37,10 @@ class PackagingOnboardingTests(unittest.TestCase):
             'include = ["tracemotive*"]',
             (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
         )
+        self.assertIn(
+            '"tracemotive.ui" = ["index.html", "assets/*"]',
+            (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+        )
 
     def test_core_import_does_not_require_openai_agents(self) -> None:
         result = subprocess.run(
@@ -233,6 +237,11 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             names = archive.namelist()
             self.assertIn("tracemotive/__init__.py", names)
             self.assertIn("tracemotive/storage/migrations.py", names)
+            self.assertIn("tracemotive/ui/__init__.py", names)
+            self.assertIn("tracemotive/ui/index.html", names)
+            self.assertTrue(any(name.startswith("tracemotive/ui/assets/") for name in names))
+            self.assertFalse(any("node_modules" in name for name in names))
+            self.assertFalse(any(name.startswith("frontend/") for name in names))
             license_name = "tracemotive-0.1.1.dist-info/licenses/LICENSE"
             self.assertIn(license_name, names)
             self.assertFalse(any(name.startswith("agentlens/") for name in names))
@@ -275,6 +284,9 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIn(f"{sdist_root}/LICENSE", names)
             self.assertIn(f"{sdist_root}/tracemotive/__init__.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/storage/migrations.py", names)
+            self.assertIn(f"{sdist_root}/tracemotive/ui/__init__.py", names)
+            self.assertIn(f"{sdist_root}/tracemotive/ui/index.html", names)
+            self.assertTrue(any(name.startswith(f"{sdist_root}/tracemotive/ui/assets/") for name in names))
             self.assertFalse(any(name.startswith(f"{sdist_root}/agentlens/") for name in names))
             self.assertFalse(
                 any(
@@ -318,6 +330,13 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             assert callable(tracemotive.trace)
             assert callable(tracemotive.span)
             assert callable(tracemotive.flush)
+            from tracemotive.ui import get_ui_root
+            ui_root = get_ui_root()
+            assert ui_root.joinpath("index.html").is_file()
+            assert any(
+                asset.name.endswith((".js", ".css"))
+                for asset in ui_root.joinpath("assets").iterdir()
+            )
             assert hasattr(tracemotive, "TraceMotiveConfigurationError")
             assert not hasattr(tracemotive, "AgentLensConfigurationError")
             assert hasattr(openai_agents, "OpenAITracingProcessor")

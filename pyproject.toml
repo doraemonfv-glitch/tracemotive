@@ -25,3 +25,6 @@ openai-agents = [
 [tool.setuptools.packages.find]
 include = ["tracemotive*"]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+"tracemotive.ui" = ["index.html", "assets/*"]

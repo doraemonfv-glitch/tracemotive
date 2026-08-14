@@ -34,3 +34,7 @@ dist/
 # Frontend dependencies and build output
 frontend/node_modules/
 frontend/dist/
+
+# Generated production UI package data; build with frontend npm run build:package.
+tracemotive/ui/index.html
+tracemotive/ui/assets/
