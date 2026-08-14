@@ -180,3 +180,102 @@ export interface SpanDetailResponse {
   span: SpanDetail;
   latency_ms: number | null;
 }
+
+export type ComparisonAlignment = "exact_match" | "left_only" | "right_only";
+export type ComparisonFieldState = "same" | "different" | "left_only" | "right_only" | "unknown";
+
+export interface ComparisonSpanRef {
+  trace_id: string;
+  span_id: string;
+}
+
+export interface ComparisonPathSegment {
+  type: string;
+  operation: string;
+  name: string;
+  ordinal: number;
+}
+
+export interface ComparisonFieldRecord {
+  path: string;
+  state: ComparisonFieldState;
+  left: CanonicalJsonValue | null;
+  right: CanonicalJsonValue | null;
+  reason: string | null;
+}
+
+export interface ComparisonSpanRecord {
+  alignment: ComparisonAlignment;
+  semantic_path: ComparisonPathSegment[];
+  left: ComparisonSpanRef | null;
+  right: ComparisonSpanRef | null;
+  differences: ComparisonFieldRecord[];
+  uncertainties: ComparisonFieldRecord[];
+}
+
+export interface ComparisonGroupSignature {
+  type: string;
+  operation: string;
+  name: string;
+}
+
+export interface ComparisonAmbiguousGroup {
+  alignment: "ambiguous_group";
+  parent_path: ComparisonPathSegment[];
+  group_signature: ComparisonGroupSignature;
+  left_count: bigint;
+  right_count: bigint;
+  resolved_members: ComparisonSpanRef[];
+  ambiguous_members: {
+    left: ComparisonSpanRef[];
+    right: ComparisonSpanRef[];
+  };
+  left_only_count: bigint | null;
+  right_only_count: bigint | null;
+  reason: string;
+}
+
+export interface ComparisonUnavailableSpan {
+  alignment: "unavailable";
+  side: "left" | "right";
+  span: ComparisonSpanRef;
+  reason: string;
+}
+
+export interface ComparisonTraceView {
+  trace: TraceHeader;
+  stats: TraceStats;
+}
+
+export interface ComparisonTraceField {
+  path: string;
+  state: "same" | "different" | "unknown";
+  left: CanonicalJsonValue | null;
+  right: CanonicalJsonValue | null;
+  reason: string | null;
+}
+
+export interface ComparisonAlignmentSummary {
+  matched_spans: bigint;
+  left_only_spans: bigint;
+  right_only_spans: bigint;
+  ambiguous_groups: bigint;
+  unavailable_spans: bigint;
+}
+
+export interface ComparisonSummary {
+  trace_fields: ComparisonTraceField[];
+  alignment: ComparisonAlignmentSummary;
+  difference_count: bigint;
+  uncertainty_count: bigint;
+}
+
+export interface TraceComparisonResponse {
+  comparison_version: "0.2";
+  left_trace: ComparisonTraceView;
+  right_trace: ComparisonTraceView;
+  summary: ComparisonSummary;
+  spans: ComparisonSpanRecord[];
+  ambiguous_groups: ComparisonAmbiguousGroup[];
+  unavailable_spans: ComparisonUnavailableSpan[];
+}

@@ -34,7 +34,21 @@ function statusLabel(status: TraceStatus): string {
   return { unset: "Unset", ok: "OK", error: "Error" }[status];
 }
 
-function TraceRow({ trace, onOpenTrace }: { trace: TraceSummary; onOpenTrace: (traceId: string) => void }) {
+function TraceRow({
+  trace,
+  onOpenTrace,
+  onSelectLeft,
+  onSelectRight,
+  leftSelected,
+  rightSelected,
+}: {
+  trace: TraceSummary;
+  onOpenTrace: (traceId: string) => void;
+  onSelectLeft: (trace: TraceSummary) => void;
+  onSelectRight: (trace: TraceSummary) => void;
+  leftSelected: boolean;
+  rightSelected: boolean;
+}) {
   return (
     <tr>
       <td className="trace-identity">
@@ -54,15 +68,31 @@ function TraceRow({ trace, onOpenTrace }: { trace: TraceSummary; onOpenTrace: (t
       <td>{formatExactInteger(trace.llm_call_count)}</td>
       <td>{formatNullableExactInteger(trace.input_tokens)}</td>
       <td>{formatNullableExactInteger(trace.output_tokens)}</td>
+      <td className="trace-actions">
+        <button type="button" className={leftSelected ? "selection-button selection-button-active" : "selection-button"} onClick={() => onSelectLeft(trace)}>
+          {leftSelected ? "Left selected" : "Use as left"}
+        </button>
+        <button type="button" className={rightSelected ? "selection-button selection-button-active" : "selection-button"} onClick={() => onSelectRight(trace)}>
+          {rightSelected ? "Right selected" : "Use as right"}
+        </button>
+      </td>
     </tr>
   );
 }
 
-export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (traceId: string) => void } = {}) {
+export function TraceList({
+  onOpenTrace = () => undefined,
+  onStartComparison = () => undefined,
+}: {
+  onOpenTrace?: (traceId: string) => void;
+  onStartComparison?: (leftTraceId: string, rightTraceId: string) => void;
+} = {}) {
   const [status, setStatus] = useState<TraceStatus | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [offset, setOffset] = useState(0n);
   const [view, setView] = useState<ViewState>({ kind: "loading" });
+  const [leftTrace, setLeftTrace] = useState<TraceSummary | null>(null);
+  const [rightTrace, setRightTrace] = useState<TraceSummary | null>(null);
   const requestIdentity = useRef(0);
 
   const filters = useMemo<TraceListFilters>(
@@ -114,6 +144,7 @@ export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (tr
   }, []);
 
   const filtersAreActive = status !== null || (name !== null && name !== "");
+  const comparisonReady = leftTrace !== null && rightTrace !== null && leftTrace.trace_id !== rightTrace.trace_id;
 
   return (
     <main className="trace-list-page">
@@ -148,6 +179,35 @@ export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (tr
         </label>
       </section>
 
+      <section className="comparison-picker" aria-label="Trace comparison selection">
+        <div>
+          <p className="eyebrow">Observed run comparison</p>
+          <h2>Compare two traces</h2>
+          <p className="comparison-picker-help">Choose a left and right trace from the list. TraceMotive reports observed structural differences without causal claims.</p>
+        </div>
+        <div className="comparison-selection-grid">
+          <SelectionSlot label="Left trace" trace={leftTrace} />
+          <SelectionSlot label="Right trace" trace={rightTrace} />
+        </div>
+        <div className="comparison-picker-actions">
+          <button
+            type="button"
+            className="primary-button"
+            disabled={!comparisonReady}
+            onClick={() => {
+              if (leftTrace !== null && rightTrace !== null && leftTrace.trace_id !== rightTrace.trace_id) {
+                onStartComparison(leftTrace.trace_id, rightTrace.trace_id);
+              }
+            }}
+          >
+            Compare selected traces
+          </button>
+          {leftTrace !== null && rightTrace !== null && leftTrace.trace_id === rightTrace.trace_id && (
+            <span className="selection-warning" role="status">Choose two different traces.</span>
+          )}
+        </div>
+      </section>
+
       {view.kind === "loading" && (
         <section className="state-message" aria-live="polite" aria-busy="true">
           Loading trace list...
@@ -165,6 +225,10 @@ export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (tr
           response={view.response}
           filtersAreActive={filtersAreActive}
           onOpenTrace={onOpenTrace}
+          leftTraceId={leftTrace?.trace_id ?? null}
+          rightTraceId={rightTrace?.trace_id ?? null}
+          onSelectLeft={setLeftTrace}
+          onSelectRight={setRightTrace}
           onPrevious={() => setOffset((current) => current > PAGE_INCREMENT ? current - PAGE_INCREMENT : 0n)}
           onNext={() => setOffset((current) => current + PAGE_INCREMENT)}
         />
@@ -173,16 +237,40 @@ export function TraceList({ onOpenTrace = () => undefined }: { onOpenTrace?: (tr
   );
 }
 
+function SelectionSlot({ label, trace }: { label: string; trace: TraceSummary | null }) {
+  return (
+    <div className="comparison-selection-slot">
+      <span className="comparison-selection-label">{label}</span>
+      {trace === null ? (
+        <span className="comparison-selection-empty">Not selected</span>
+      ) : (
+        <span className="comparison-selection-value">
+          <strong>{trace.name}</strong>
+          <code>{trace.trace_id}</code>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TraceResults({
   response,
   filtersAreActive,
   onOpenTrace,
+  leftTraceId,
+  rightTraceId,
+  onSelectLeft,
+  onSelectRight,
   onPrevious,
   onNext,
 }: {
   response: TraceListResponse;
   filtersAreActive: boolean;
   onOpenTrace: (traceId: string) => void;
+  leftTraceId: string | null;
+  rightTraceId: string | null;
+  onSelectLeft: (trace: TraceSummary) => void;
+  onSelectRight: (trace: TraceSummary) => void;
   onPrevious: () => void;
   onNext: () => void;
 }) {
@@ -231,9 +319,20 @@ function TraceResults({
               <th scope="col">LLM calls</th>
               <th scope="col">Input tokens</th>
               <th scope="col">Output tokens</th>
+              <th scope="col">Compare</th>
             </tr>
           </thead>
-          <tbody>{items.map((trace) => <TraceRow key={trace.trace_id} trace={trace} onOpenTrace={onOpenTrace} />)}</tbody>
+          <tbody>{items.map((trace) => (
+            <TraceRow
+              key={trace.trace_id}
+              trace={trace}
+              onOpenTrace={onOpenTrace}
+              onSelectLeft={onSelectLeft}
+              onSelectRight={onSelectRight}
+              leftSelected={trace.trace_id === leftTraceId}
+              rightSelected={trace.trace_id === rightTraceId}
+            />
+          ))}</tbody>
         </table>
       </div>
       <Pagination

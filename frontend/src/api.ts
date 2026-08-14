@@ -12,12 +12,25 @@ import type {
   LLMUsage,
   SpanRecord,
   SpanType,
+  ComparisonAlignmentSummary,
+  ComparisonAmbiguousGroup,
+  ComparisonFieldRecord,
+  ComparisonFieldState,
+  ComparisonGroupSignature,
+  ComparisonPathSegment,
+  ComparisonSpanRecord,
+  ComparisonSpanRef,
+  ComparisonSummary,
+  ComparisonTraceField,
+  ComparisonTraceView,
+  ComparisonUnavailableSpan,
   TraceDetailResponse,
   TraceHeader,
   TraceListFilters,
   TraceListResponse,
   TraceStats,
   TraceSummary,
+  TraceComparisonResponse,
 } from "./types";
 
 export const TRACE_LIST_PATH = "/api/v1/traces";
@@ -516,6 +529,224 @@ export function decodeSpanListResponse(text: string, expectedTraceId: string): S
   return { items };
 }
 
+const COMPARISON_FIELD_STATES: readonly ComparisonFieldState[] = ["same", "different", "left_only", "right_only", "unknown"];
+
+function decodeComparisonRef(value: unknown): ComparisonSpanRef | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["trace_id", "span_id"]) || typeof value.trace_id !== "string" || typeof value.span_id !== "string" || value.trace_id.length === 0 || value.span_id.length === 0) {
+    return undefined;
+  }
+  return { trace_id: value.trace_id, span_id: value.span_id };
+}
+
+function decodeComparisonPath(value: unknown): ComparisonPathSegment[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const segments: ComparisonPathSegment[] = [];
+  for (const segment of value) {
+    if (!isRecord(segment) || !hasExactKeys(segment, ["type", "operation", "name", "ordinal"]) || typeof segment.type !== "string" || typeof segment.operation !== "string" || typeof segment.name !== "string") {
+      return undefined;
+    }
+    const ordinal = exactNonnegativeInteger(segment.ordinal);
+    if (ordinal === undefined || ordinal > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return undefined;
+    }
+    segments.push({ type: segment.type, operation: segment.operation, name: segment.name, ordinal: Number(ordinal) });
+  }
+  return segments;
+}
+
+function decodeComparisonField(value: unknown): ComparisonFieldRecord | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["path", "state", "left", "right", "reason"]) || typeof value.path !== "string" || typeof value.reason !== "string" && value.reason !== null || !COMPARISON_FIELD_STATES.includes(value.state as ComparisonFieldState)) {
+    return undefined;
+  }
+  return {
+    path: value.path,
+    state: value.state as ComparisonFieldState,
+    left: value.left as ComparisonFieldRecord["left"],
+    right: value.right as ComparisonFieldRecord["right"],
+    reason: value.reason,
+  };
+}
+
+function decodeComparisonFields(value: unknown): ComparisonFieldRecord[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const fields: ComparisonFieldRecord[] = [];
+  for (const field of value) {
+    const decoded = decodeComparisonField(field);
+    if (decoded === undefined) {
+      return undefined;
+    }
+    fields.push(decoded);
+  }
+  return fields;
+}
+
+function decodeComparisonSpan(value: unknown): ComparisonSpanRecord | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["alignment", "semantic_path", "left", "right", "differences", "uncertainties"])) {
+    return undefined;
+  }
+  if (value.alignment !== "exact_match" && value.alignment !== "left_only" && value.alignment !== "right_only") {
+    return undefined;
+  }
+  const semanticPath = decodeComparisonPath(value.semantic_path);
+  const differences = decodeComparisonFields(value.differences);
+  const uncertainties = decodeComparisonFields(value.uncertainties);
+  const left = value.left === null ? null : decodeComparisonRef(value.left);
+  const right = value.right === null ? null : decodeComparisonRef(value.right);
+  if (semanticPath === undefined || differences === undefined || uncertainties === undefined || (value.left !== null && left === undefined) || (value.right !== null && right === undefined)) {
+    return undefined;
+  }
+  if ((value.alignment === "exact_match" && (left === null || right === null)) || (value.alignment === "left_only" && (left === null || right !== null)) || (value.alignment === "right_only" && (left !== null || right === null))) {
+    return undefined;
+  }
+  return { alignment: value.alignment, semantic_path: semanticPath, left: left ?? null, right: right ?? null, differences, uncertainties };
+}
+
+function decodeComparisonSignature(value: unknown): ComparisonGroupSignature | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["type", "operation", "name"]) || typeof value.type !== "string" || typeof value.operation !== "string" || typeof value.name !== "string") {
+    return undefined;
+  }
+  return { type: value.type, operation: value.operation, name: value.name };
+}
+
+function decodeComparisonRefs(value: unknown): ComparisonSpanRef[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const refs: ComparisonSpanRef[] = [];
+  for (const item of value) {
+    const ref = decodeComparisonRef(item);
+    if (ref === undefined) {
+      return undefined;
+    }
+    refs.push(ref);
+  }
+  return refs;
+}
+
+function decodeComparisonAmbiguousGroup(value: unknown): ComparisonAmbiguousGroup | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["alignment", "parent_path", "group_signature", "left_count", "right_count", "resolved_members", "ambiguous_members", "left_only_count", "right_only_count", "reason"]) || value.alignment !== "ambiguous_group" || typeof value.reason !== "string") {
+    return undefined;
+  }
+  const parentPath = decodeComparisonPath(value.parent_path);
+  const signature = decodeComparisonSignature(value.group_signature);
+  const leftCount = exactNonnegativeInteger(value.left_count);
+  const rightCount = exactNonnegativeInteger(value.right_count);
+  const resolvedMembers = decodeComparisonRefs(value.resolved_members);
+  const members = isRecord(value.ambiguous_members) && hasExactKeys(value.ambiguous_members, ["left", "right"])
+    ? { left: decodeComparisonRefs(value.ambiguous_members.left), right: decodeComparisonRefs(value.ambiguous_members.right) }
+    : undefined;
+  const leftOnlyCount = value.left_only_count === null ? null : exactNonnegativeInteger(value.left_only_count);
+  const rightOnlyCount = value.right_only_count === null ? null : exactNonnegativeInteger(value.right_only_count);
+  if (parentPath === undefined || signature === undefined || leftCount === undefined || rightCount === undefined || resolvedMembers === undefined || members === undefined || members.left === undefined || members.right === undefined || leftOnlyCount === undefined || rightOnlyCount === undefined) {
+    return undefined;
+  }
+  return {
+    alignment: "ambiguous_group",
+    parent_path: parentPath,
+    group_signature: signature,
+    left_count: leftCount,
+    right_count: rightCount,
+    resolved_members: resolvedMembers,
+    ambiguous_members: { left: members.left, right: members.right },
+    left_only_count: leftOnlyCount,
+    right_only_count: rightOnlyCount,
+    reason: value.reason,
+  };
+}
+
+function decodeComparisonUnavailable(value: unknown): ComparisonUnavailableSpan | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["alignment", "side", "span", "reason"]) || value.alignment !== "unavailable" || (value.side !== "left" && value.side !== "right") || typeof value.reason !== "string") {
+    return undefined;
+  }
+  const span = decodeComparisonRef(value.span);
+  return span === undefined ? undefined : { alignment: "unavailable", side: value.side, span, reason: value.reason };
+}
+
+function decodeComparisonTraceField(value: unknown): ComparisonTraceField | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["path", "state", "left", "right", "reason"]) || typeof value.path !== "string" || (value.state !== "same" && value.state !== "different" && value.state !== "unknown") || (typeof value.reason !== "string" && value.reason !== null)) {
+    return undefined;
+  }
+  return { path: value.path, state: value.state, left: value.left as ComparisonTraceField["left"], right: value.right as ComparisonTraceField["right"], reason: value.reason };
+}
+
+function decodeComparisonTraceFields(value: unknown): ComparisonTraceField[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const fields: ComparisonTraceField[] = [];
+  for (const field of value) {
+    const decoded = decodeComparisonTraceField(field);
+    if (decoded === undefined) {
+      return undefined;
+    }
+    fields.push(decoded);
+  }
+  return fields;
+}
+
+function decodeComparisonTraceView(value: unknown, expectedTraceId: string): ComparisonTraceView | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["trace", "stats"])) {
+    return undefined;
+  }
+  const trace = traceHeader(value.trace, expectedTraceId);
+  const stats = traceStats(value.stats);
+  return trace === undefined || stats === undefined ? undefined : { trace, stats };
+}
+
+function decodeComparisonSummary(value: unknown): ComparisonSummary | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["trace_fields", "alignment", "difference_count", "uncertainty_count"]) || !isRecord(value.alignment)) {
+    return undefined;
+  }
+  const traceFields = decodeComparisonTraceFields(value.trace_fields);
+  const alignmentValue = value.alignment;
+  if (!hasExactKeys(alignmentValue, ["matched_spans", "left_only_spans", "right_only_spans", "ambiguous_groups", "unavailable_spans"])) {
+    return undefined;
+  }
+  const alignment: Partial<ComparisonAlignmentSummary> = {};
+  for (const key of ["matched_spans", "left_only_spans", "right_only_spans", "ambiguous_groups", "unavailable_spans"] as const) {
+    const parsed = exactNonnegativeInteger(alignmentValue[key]);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    alignment[key] = parsed;
+  }
+  const differenceCount = exactNonnegativeInteger(value.difference_count);
+  const uncertaintyCount = exactNonnegativeInteger(value.uncertainty_count);
+  if (traceFields === undefined || differenceCount === undefined || uncertaintyCount === undefined) {
+    return undefined;
+  }
+  return { trace_fields: traceFields, alignment: alignment as ComparisonAlignmentSummary, difference_count: differenceCount, uncertainty_count: uncertaintyCount };
+}
+
+export function decodeComparisonResponse(text: string, leftTraceId: string, rightTraceId: string): TraceComparisonResponse {
+  const value: unknown = parse(text);
+  if (!isRecord(value) || !hasExactKeys(value, ["comparison_version", "left_trace", "right_trace", "summary", "spans", "ambiguous_groups", "unavailable_spans"]) || value.comparison_version !== "0.2") {
+    throw new Error("Trace comparison response was invalid");
+  }
+  const leftTrace = decodeComparisonTraceView(value.left_trace, leftTraceId);
+  const rightTrace = decodeComparisonTraceView(value.right_trace, rightTraceId);
+  const summary = decodeComparisonSummary(value.summary);
+  const spans = Array.isArray(value.spans) ? value.spans.map(decodeComparisonSpan) : undefined;
+  const groups = Array.isArray(value.ambiguous_groups) ? value.ambiguous_groups.map(decodeComparisonAmbiguousGroup) : undefined;
+  const unavailable = Array.isArray(value.unavailable_spans) ? value.unavailable_spans.map(decodeComparisonUnavailable) : undefined;
+  if (leftTrace === undefined || rightTrace === undefined || summary === undefined || spans === undefined || spans.some((item) => item === undefined) || groups === undefined || groups.some((item) => item === undefined) || unavailable === undefined || unavailable.some((item) => item === undefined)) {
+    throw new Error("Trace comparison response was invalid");
+  }
+  return {
+    comparison_version: "0.2",
+    left_trace: leftTrace,
+    right_trace: rightTrace,
+    summary,
+    spans: spans as ComparisonSpanRecord[],
+    ambiguous_groups: groups as ComparisonAmbiguousGroup[],
+    unavailable_spans: unavailable as ComparisonUnavailableSpan[],
+  };
+}
+
 export function traceListUrl(filters: TraceListFilters): string {
   const parameters = new URLSearchParams({
     limit: String(filters.limit),
@@ -542,6 +773,10 @@ export function spanListUrl(traceId: string): string {
 
 export function spanDetailUrl(traceId: string, spanId: string): string {
   return `${spanListUrl(traceId)}/${encodeURIComponent(spanId)}`;
+}
+
+export function comparisonUrl(leftTraceId: string, rightTraceId: string): string {
+  return `/api/v2/compare/${encodeURIComponent(leftTraceId)}/${encodeURIComponent(rightTraceId)}`;
 }
 
 export async function fetchTraceList(
@@ -600,4 +835,9 @@ export function decodeSpanDetailResponse(text: string, expectedTraceId: string, 
 export async function fetchSpanDetail(traceId: string, spanId: string, signal: AbortSignal): Promise<SpanDetailResponse> {
   const responseText = await fetchQueryApiText(spanDetailUrl(traceId, spanId), signal);
   return decodeSpanDetailResponse(responseText, traceId, spanId);
+}
+
+export async function fetchTraceComparison(leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceComparisonResponse> {
+  const responseText = await fetchQueryApiText(comparisonUrl(leftTraceId, rightTraceId), signal);
+  return decodeComparisonResponse(responseText, leftTraceId, rightTraceId);
 }
