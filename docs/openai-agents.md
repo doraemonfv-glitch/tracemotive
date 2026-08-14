@@ -1,6 +1,6 @@
 # OpenAI Agents SDK integration
 
-TraceMotive v0.1 supports the OpenAI Agents SDK range `>=0.17,<0.18`. The
+TraceMotive v0.2 supports the OpenAI Agents SDK range `>=0.17,<0.18`. The
 package extra is optional; core `import tracemotive` does not import or require
 the `agents` package. The range was compatibility-tested at 0.17.0, 0.17.4,
 and 0.17.8 for the adapter callbacks, span-data fields, processor registration
@@ -31,7 +31,7 @@ same framework trace remotely.
 
 Installation is process-global. Repeating the same mode is a no-op; changing
 the mode later raises `tracemotive.TraceMotiveConfigurationError`. The mode cannot
-be switched dynamically, and v0.1 does not provide uninstall or restore.
+be switched dynamically, and v0.2 does not provide uninstall or restore.
 
 Installing the integration does not enable TraceMotive. Configure the core SDK
 separately if tracing should produce TraceMotive events. Without the optional

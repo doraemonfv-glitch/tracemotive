@@ -1,24 +1,26 @@
 # TraceMotive
 
-TraceMotive v0.1 is a local-first tracing and debugging tool for AI agent
-execution. It records canonical traces and spans, stores them in a local
-SQLite-backed Collector, and displays them through a React UI.
+TraceMotive v0.2 is a local-first tracing and debugging tool for AI agent
+execution. It records sanitized Canonical traces and spans, keeps them in a
+persistent local SQLite Collector, and serves a packaged UI for inspecting and
+comparing two observed runs.
 
 ![TraceMotive demo](https://raw.githubusercontent.com/doraemonfv-glitch/tracemotive/main/docs/assets/tracemotive-demo.gif)
 
 The long-term vision describes TraceMotive as “the causal debugger for AI
-agents”, but v0.1 is an observation kernel. It does not implement replay,
-RCA, Eval, cloud sync, authentication, remote collectors, or additional
-framework adapters. See [the long-term vision](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/long-term-vision.md) for
-non-normative future context.
+agents”. The current v0.2 product provides structural observed differences,
+not automatic RCA, causal proof, first divergence, replay, cloud sync,
+authentication, remote collectors, or additional framework adapters. See [the
+long-term vision](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/long-term-vision.md)
+for non-normative future context.
 
 ## Release and distribution status
 
 The Python distribution and import package are both `tracemotive`. Releases
 are distributed on PyPI as `tracemotive`. This checkout declares package
-version `0.1.1`. For normal use, install the released package from PyPI as
-described below. The fresh-checkout instructions later in this README are for
-contributors and local development.
+version `0.2.0`. After publication, normal users can install the released
+package from PyPI as described below. The fresh-checkout instructions later in
+this README are for contributors and local development.
 
 The OpenAI Agents SDK range supported by this release is `>=0.17,<0.18`; that
 same range is declared in `pyproject.toml`.
@@ -55,16 +57,16 @@ pip install "tracemotive[server,openai-agents]"
 
 - Python 3.10 or newer. The package metadata declares `Requires-Python >=3.10`;
   this checkout was locally validated with Python 3.12.
-- Node.js `^20.19.0 || >=22.12.0`, as required by the locked Vite toolchain.
-  npm is used for the frontend.
+- Node.js and npm are needed only for frontend development and release builds;
+  normal installed-wheel users do not need them.
 - An OpenAI API key is needed only for the real OpenAI Agents example, not for
   the deterministic test suite or core SDK smoke.
 
 ## Quick trial — try TraceMotive in ~10 minutes
 
-This is a short first-run path for evaluation. Ten minutes is a rough target,
-not a guarantee. It uses the deterministic Python SDK trace below, so it does
-not require an OpenAI API key. Keep three terminals available.
+This is a short first-run path for evaluation. It uses the deterministic Python
+SDK trace below, so it does not require an OpenAI API key. The released wheel
+contains the production UI; Node.js/npm are not required.
 
 1. Clone the repository and enter it. The clone and directory commands are the
    same in PowerShell and POSIX shells:
@@ -74,44 +76,35 @@ not require an OpenAI API key. Keep three terminals available.
    cd tracemotive
    ```
 
-2. Create and activate a Python environment, then install the checkout with
-   Collector support. Use the [fresh-checkout installation](#install-from-a-fresh-checkout)
-   instructions for the platform-specific activation command. From the
-   repository root, run:
+2. Create and activate a Python environment, then install the server extra:
 
    ```text
-   python -m pip install -e ".[server]"
+   python -m pip install "tracemotive[server]"
    ```
 
-3. In terminal 1, from the repository root, start the existing loopback-only
-   [Collector](#start-the-local-collector) and leave it running:
+3. Start the single-command local experience:
 
    ```text
-   python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
+   tracemotive serve
    ```
 
-4. In terminal 2, from the repository root, start the existing
-   [frontend](#start-the-frontend):
+   It binds only to `127.0.0.1:8765`, serves the packaged UI and APIs from the
+   same origin, and stores sanitized traces in the platform-safe persistent
+   database path. Use `tracemotive serve --db :memory:` only for an explicit
+   ephemeral session.
 
-   ```text
-   cd frontend
-   npm ci
-   npm run dev
-   ```
+4. In a second terminal, run the [minimal Python SDK usage](#minimal-python-sdk-usage)
+   block. It creates the deterministic `demo` trace and sends it to the local
+   server. No model or external API request is made.
 
-5. In terminal 3, from the repository root with the Python environment active,
-   save the existing [minimal Python SDK usage](#minimal-python-sdk-usage)
-   block as a temporary `.py` file and run it with `python`. It creates the
-   deterministic `demo` trace and sends it to the local Collector. No model or
-   external API request is made.
-
-6. Open `http://127.0.0.1:5173` in a browser, select the new `demo` trace, and
-   inspect its Trace Detail, Span Tree, Timeline, and Span Inspector. The
+5. Open `http://127.0.0.1:8765` in a browser, select the new `demo` trace, and
+   inspect its Trace Detail, Span Tree, Timeline, and Span Inspector. Select
+   two traces to view structural observed differences. The
    [OpenAI Agents example](#openai-agents-sdk-integration-and-example) is the
    alternative path if you want to try a real framework integration; it makes
    a real model request and requires its documented extra and API key.
 
-7. Share what worked, what was unclear, and what you expected to see in a
+6. Share what worked, what was unclear, and what you expected to see in a
    [GitHub Issue](https://github.com/doraemonfv-glitch/tracemotive/issues).
    Include your OS and Python/Node versions plus sanitized setup output, and
    do not include API keys or other credentials. Use
@@ -151,27 +144,37 @@ python -m pip install -e ".[server,openai-agents]"
 This is a development install from a repository checkout, distinct from the
 PyPI installation above.
 
-## Start the local Collector
+## Start the local server
 
-From the repository root, keep one terminal running:
+For normal use, start both the Collector and packaged production UI together:
+
+```text
+tracemotive serve
+```
+
+The server is loopback-only and has no configurable host. It always binds to
+`127.0.0.1`; remote, LAN, and `0.0.0.0` serving are not supported. Check that
+it is ready at `http://127.0.0.1:8765/api/v1/health`.
+
+`tracemotive serve` uses persistent SQLite by default. The path precedence is
+explicit `--db`, `TRACEMOTIVE_DB`, then the platform-safe default documented in
+the [release readiness checklist](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/release-readiness.md).
+Startup/path failures are explicit; the server never silently falls back to
+`:memory:` or another port.
+
+For development and v0.1 compatibility, the direct Uvicorn Collector factory
+remains available:
 
 ```text
 python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
-The Collector is loopback-only. Do not replace `127.0.0.1` with `0.0.0.0` or
-another remote address. Check that it is ready at
-`http://127.0.0.1:8765/api/v1/health`.
+Programmatic `Repository()` and bare `create_app()` calls still default to
+SQLite `:memory:` for v0.1 compatibility.
 
-The supported factory command uses the existing `create_app()` default
-repository, SQLite `:memory:`. Traces therefore live only for the lifetime of
-that Collector process and are cleared on restart. v0.1 does not expose a new
-CLI or environment-variable database-path configuration; no developer path is
-hard-coded into the package.
+## Frontend development
 
-## Start the frontend
-
-In a second terminal:
+The frontend development server is for contributors and frontend work only:
 
 ```text
 cd frontend
@@ -180,10 +183,8 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` to the loopback Collector.
-The frontend is a separate v0.1 development-server application; it is not
-embedded into the Python wheel and the Collector does not serve static UI
-files. `npm run build` verifies a production bundle locally but does not
-change that distribution model.
+The production UI is embedded in the Python wheel and served by
+`tracemotive serve`; normal users do not need this development workflow.
 
 ## Minimal Python SDK usage
 
@@ -206,7 +207,7 @@ with tracemotive.trace("demo"):
 tracemotive.flush()
 ```
 
-The stable v0.1 Python surface is `configure`, `trace`, `span`, and `flush`.
+The stable Python SDK surface remains `configure`, `trace`, `span`, and `flush`.
 Tracing failures, an unavailable Collector, and queue overflow do not fail the
 instrumented Agent execution.
 
@@ -267,6 +268,10 @@ remotely. See [the integration notes](https://github.com/doraemonfv-glitch/trace
   sanitizes sensitive values before an event enters the transport queue.
 - The in-memory transport queue retains serialized Canonical event bytes only;
   it does not retain raw framework objects or unsanitized source values.
+- The Collector persists only sanitized Canonical data in its configured local
+  SQLite database. SQLite journal/WAL/SHM sidecars may also exist. TraceMotive
+  does not provide local database encryption; protect the local data directory
+  with the operating system's access controls.
 - Redaction is part of this shared pre-transport boundary, not an independent
   redaction policy that each framework adapter is expected to define. The
   policy covers known/specified sensitive keys and recognizable credential
@@ -284,8 +289,9 @@ If the example or SDK smoke reports that the Collector is unavailable, check
 the health URL, confirm the Collector terminal is still running on
 `127.0.0.1:8765`, and ensure the frontend is using `127.0.0.1:5173`. The SDK
 keeps Agent execution non-fatal when local telemetry cannot be delivered, but
-the trace may be absent or incomplete. Restarting the in-memory Collector
-clears its current traces.
+the trace may be absent or incomplete. Restarting the default persistent
+Collector keeps committed traces; an explicitly selected `:memory:` Collector
+is cleared on restart.
 
 ## Local validation
 
@@ -301,7 +307,7 @@ Frontend tests and build:
 cd frontend
 npm ci
 npm test
-npm run build
+npm run build:package
 ```
 
 Local wheel/sdist build and installed-package checks are documented in

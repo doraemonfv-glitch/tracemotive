@@ -20,17 +20,24 @@ python -m pip install -e ".[server,openai-agents]"
 The supported `openai-agents` range is `>=0.17,<0.18`. The Python import name
 and distribution name are both `tracemotive`.
 
-Use three terminals from the repository root:
+For the packaged v0.2 local experience, use `tracemotive serve` from one
+terminal. It binds to `127.0.0.1:8765`, serves the packaged UI, and uses
+persistent local SQLite by default. The direct Uvicorn command below remains a
+development and v0.1 compatibility path.
 
-1. Start the existing loopback-only Collector. Keep it running; its default
-   SQLite repository is `:memory:` for this local example and is cleared when
-   the Collector process stops.
+1. Start the loopback-only server. Keep it running:
+
+   ```text
+   tracemotive serve
+   ```
+
+   To use the v0.1-compatible direct Collector path instead:
 
    ```text
    python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
    ```
 
-2. Run the example:
+2. In another terminal, run the example:
 
    ```text
    python -m examples.openai_agents_example
@@ -49,11 +56,18 @@ Use three terminals from the repository root:
    Agents SDK from sending the model input required for the real model request
    to OpenAI.
 
-3. Start the existing frontend and open the printed local URL:
+3. With `tracemotive serve`, open the packaged UI at:
+
+   ```text
+   http://127.0.0.1:8765
+   ```
+
+   For frontend development only, start the Vite frontend separately and open
+   its local URL:
 
    ```text
    cd frontend
-   npm install
+   npm ci
    npm run dev
    ```
 

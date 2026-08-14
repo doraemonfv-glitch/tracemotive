@@ -15,7 +15,7 @@ import tracemotive.integrations.openai_agents
 
 
 COLLECTOR_ENDPOINT = "http://127.0.0.1:8765"
-UI_URL = "http://127.0.0.1:5173"
+UI_URL = "http://127.0.0.1:8765"
 
 
 def _collector_available() -> bool:
