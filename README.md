@@ -202,9 +202,17 @@ remotely. See [the integration notes](https://github.com/doraemonfv-glitch/trace
   it on only when local content capture is intentional.
 - Model-provider traffic is separate from TraceMotive telemetry. For example,
   the OpenAI example sends the model request to OpenAI.
-- Known/specified sensitive keys and credential-like patterns are redacted
-  according to the Frozen v0.1 policy before transport. This is not a promise
-  to detect every possible secret.
+- Tracing and content capture are independent controls: enabling tracing does
+  not enable content capture.
+- A framework adapter converts framework data into TraceMotive's Canonical
+  representation. The shared v0.1 privacy boundary then normalizes and
+  sanitizes sensitive values before an event enters the transport queue.
+- The in-memory transport queue retains serialized Canonical event bytes only;
+  it does not retain raw framework objects or unsanitized source values.
+- Redaction is part of this shared pre-transport boundary, not an independent
+  redaction policy that each framework adapter is expected to define. The
+  policy covers known/specified sensitive keys and recognizable credential
+  patterns; it does not guarantee detection of every possible secret.
 - Captured runtime content is untrusted data. The frontend renders it as data
   and does not execute embedded HTML, script, or arbitrary code.
 
