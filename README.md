@@ -60,6 +60,64 @@ pip install "tracemotive[server,openai-agents]"
 - An OpenAI API key is needed only for the real OpenAI Agents example, not for
   the deterministic test suite or core SDK smoke.
 
+## Quick trial — try TraceMotive in ~10 minutes
+
+This is a short first-run path for evaluation. Ten minutes is a rough target,
+not a guarantee. It uses the deterministic Python SDK trace below, so it does
+not require an OpenAI API key. Keep three terminals available.
+
+1. Clone the repository and enter it. The clone and directory commands are the
+   same in PowerShell and POSIX shells:
+
+   ```text
+   git clone https://github.com/doraemonfv-glitch/tracemotive.git
+   cd tracemotive
+   ```
+
+2. Create and activate a Python environment, then install the checkout with
+   Collector support. Use the [fresh-checkout installation](#install-from-a-fresh-checkout)
+   instructions for the platform-specific activation command. From the
+   repository root, run:
+
+   ```text
+   python -m pip install -e ".[server]"
+   ```
+
+3. In terminal 1, from the repository root, start the existing loopback-only
+   [Collector](#start-the-local-collector) and leave it running:
+
+   ```text
+   python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
+   ```
+
+4. In terminal 2, from the repository root, start the existing
+   [frontend](#start-the-frontend):
+
+   ```text
+   cd frontend
+   npm ci
+   npm run dev
+   ```
+
+5. In terminal 3, from the repository root with the Python environment active,
+   save the existing [minimal Python SDK usage](#minimal-python-sdk-usage)
+   block as a temporary `.py` file and run it with `python`. It creates the
+   deterministic `demo` trace and sends it to the local Collector. No model or
+   external API request is made.
+
+6. Open `http://127.0.0.1:5173` in a browser, select the new `demo` trace, and
+   inspect its Trace Detail, Span Tree, Timeline, and Span Inspector. The
+   [OpenAI Agents example](#openai-agents-sdk-integration-and-example) is the
+   alternative path if you want to try a real framework integration; it makes
+   a real model request and requires its documented extra and API key.
+
+7. Share what worked, what was unclear, and what you expected to see in a
+   [GitHub Issue](https://github.com/doraemonfv-glitch/tracemotive/issues).
+   Include your OS and Python/Node versions plus sanitized setup output, and
+   do not include API keys or other credentials. Use
+   [SECURITY.md](https://github.com/doraemonfv-glitch/tracemotive/blob/main/SECURITY.md)
+   for security-sensitive reports.
+
 ## Install from a fresh checkout
 
 For contributors and local development, create and activate a virtual
