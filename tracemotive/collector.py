@@ -8,6 +8,7 @@ the status/body pair described by the Frozen Specification.
 
 from dataclasses import dataclass, replace
 from hashlib import sha256
+from os import PathLike
 from typing import Any, Callable, Mapping
 from uuid import UUID
 import re
@@ -746,18 +747,21 @@ class Collector:
 def create_app(
     repository: Repository | None = None,
     *,
+    database_path: str | PathLike[str] | None = None,
     clock: Callable[[], int] | None = None,
     bind_host: str = DEFAULT_BIND_HOST,
 ) -> Any:
     """Create the local FastAPI application for ingest and Query API routes.
 
     Binding is deliberately constrained here because v0.1 has no remote
-    collector security model.  The returned app contains only the ingest
-    route; lifecycle and persistence behavior remain in :class:`Collector`.
+    collector security model.  Supplying ``database_path`` opens an explicit
+    Repository; with neither argument the v0.1 in-memory default is retained.
     """
 
     if bind_host != DEFAULT_BIND_HOST:
         raise ValueError("TraceMotive v0.1 collector must bind to 127.0.0.1")
+    if repository is not None and database_path is not None:
+        raise ValueError("specify either repository or database_path")
     try:
         from fastapi import FastAPI, Request
         from fastapi.responses import JSONResponse
@@ -766,7 +770,12 @@ def create_app(
             "FastAPI is required for the TraceMotive Issue 04 HTTP boundary"
         ) from exc
 
-    collector = Collector(repository, clock=clock)
+    collector = Collector(
+        repository if repository is not None else (
+            Repository(database_path) if database_path is not None else None
+        ),
+        clock=clock,
+    )
     app = FastAPI(
         title="TraceMotive Collector",
         docs_url=None,

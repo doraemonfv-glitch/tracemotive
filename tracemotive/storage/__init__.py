@@ -6,6 +6,7 @@ from .migrations import (
     NewerDatabaseError,
     run_migrations,
 )
+from .paths import DatabasePathError, resolve_database_path
 from .repository import (
     EntityConflictError,
     Repository,
@@ -17,6 +18,7 @@ from .repository import (
 
 __all__ = [
     "CURRENT_MIGRATION_VERSION",
+    "DatabasePathError",
     "EntityConflictError",
     "MigrationError",
     "NewerDatabaseError",
@@ -26,4 +28,5 @@ __all__ = [
     "TraceStats",
     "TraceSummaryRecord",
     "run_migrations",
+    "resolve_database_path",
 ]

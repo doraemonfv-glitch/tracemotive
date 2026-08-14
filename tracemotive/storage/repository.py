@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+import os
 import re
 import sqlite3
 from threading import RLock
@@ -31,6 +32,7 @@ from tracemotive.canonical.models import (
 )
 
 from .migrations import run_migrations
+from .paths import DatabasePathError, prepare_database_path
 
 
 class EntityConflictError(RuntimeError):
@@ -267,10 +269,13 @@ def _row_span_values(
 class Repository:
     """Thread-safe internal repository for canonical TraceMotive state."""
 
-    def __init__(self, path: str = ":memory:") -> None:
-        self.path = path
+    def __init__(self, path: str | os.PathLike[str] = ":memory:") -> None:
+        self.path = prepare_database_path(path)
         self._lock = RLock()
-        self._connection = sqlite3.connect(path, check_same_thread=False)
+        try:
+            self._connection = sqlite3.connect(self.path, check_same_thread=False)
+        except sqlite3.Error as exc:
+            raise DatabasePathError("could not open database") from exc
         self._connection.row_factory = sqlite3.Row
         try:
             run_migrations(self._connection)
