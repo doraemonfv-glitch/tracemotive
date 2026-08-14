@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import textwrap
 import time
+import urllib.error
 import urllib.request
 import unittest
 import zipfile
@@ -238,6 +239,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIn("tracemotive/__init__.py", names)
             self.assertIn("tracemotive/storage/migrations.py", names)
             self.assertIn("tracemotive/ui/__init__.py", names)
+            self.assertIn("tracemotive/ui/server.py", names)
             self.assertIn("tracemotive/ui/index.html", names)
             self.assertTrue(any(name.startswith("tracemotive/ui/assets/") for name in names))
             self.assertFalse(any("node_modules" in name for name in names))
@@ -285,6 +287,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIn(f"{sdist_root}/tracemotive/__init__.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/storage/migrations.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/ui/__init__.py", names)
+            self.assertIn(f"{sdist_root}/tracemotive/ui/server.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/ui/index.html", names)
             self.assertTrue(any(name.startswith(f"{sdist_root}/tracemotive/ui/assets/") for name in names))
             self.assertFalse(any(name.startswith(f"{sdist_root}/agentlens/") for name in names))
@@ -354,6 +357,68 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             """
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_installed_cli_serves_packaged_ui_without_checkout_or_node(self) -> None:
+        executable = self._venv / (
+            Path("Scripts") / "tracemotive.exe" if os.name == "nt" else Path("bin") / "tracemotive"
+        )
+        self.assertTrue(executable.is_file(), executable)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        database_path = self._run_root / "v02-11-serve.sqlite3"
+        environment = _clean_subprocess_environment()
+        environment["PATH"] = str(executable.parent)
+        server = subprocess.Popen(
+            [str(executable), "serve", "--db", str(database_path), "--port", str(port)],
+            cwd=self._run_root,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        endpoint = f"http://127.0.0.1:{port}"
+        try:
+            deadline = time.monotonic() + 10
+            while True:
+                if server.poll() is not None:
+                    self.fail(server.stderr.read())
+                try:
+                    with urllib.request.urlopen(endpoint + "/api/v1/health", timeout=1) as response:
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.read(), b'{"status":"ok"}')
+                    break
+                except Exception:
+                    if time.monotonic() >= deadline:
+                        self.fail("installed tracemotive serve did not become ready")
+                    time.sleep(0.1)
+
+            with urllib.request.urlopen(endpoint + "/", timeout=2) as response:
+                index = response.read()
+                self.assertEqual(response.status, 200)
+                self.assertIn(b'<div id="root">', index)
+            asset_match = re.search(rb'/(assets/[^"\']+)', index)
+            self.assertIsNotNone(asset_match)
+            asset_path = "/" + asset_match.group(1).decode("ascii")
+            with urllib.request.urlopen(endpoint + asset_path, timeout=2) as response:
+                self.assertEqual(response.status, 200)
+                self.assertTrue(response.read())
+            with self.assertRaises(urllib.error.HTTPError) as unknown_api:
+                urllib.request.urlopen(endpoint + "/api/v1/not-a-route", timeout=2)
+            self.assertEqual(unknown_api.exception.code, 404)
+        finally:
+            if server.poll() is None:
+                server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
+            if server.stdout is not None:
+                server.stdout.close()
+            if server.stderr is not None:
+                server.stderr.close()
+        self.assertIsNotNone(server.returncode)
 
     def test_installed_server_extra_runs_documented_uvicorn_factory(self) -> None:
         factory_target = "tracemotive.collector:create_app"

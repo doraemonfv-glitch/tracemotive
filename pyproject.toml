@@ -14,6 +14,9 @@ dependencies = [
     "fastapi>=0.110,<1",
 ]
 
+[project.scripts]
+tracemotive = "tracemotive.cli:main"
+
 [project.optional-dependencies]
 server = [
     "uvicorn>=0.30,<1",

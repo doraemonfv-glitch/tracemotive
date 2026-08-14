@@ -22,7 +22,9 @@ def main() -> int:
 
     DESTINATION.mkdir(parents=True, exist_ok=True)
     for child in DESTINATION.iterdir():
-        if child.name == "__init__.py":
+        # Keep Python package code in the resource package.  The generated
+        # Vite output is the only content this step owns.
+        if child.suffix == ".py":
             continue
         if child.is_dir():
             shutil.rmtree(child)
