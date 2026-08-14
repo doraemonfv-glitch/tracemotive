@@ -70,6 +70,14 @@ class TraceQueryRecord:
     stats: TraceStats
 
 
+@dataclass(frozen=True, slots=True)
+class TraceComparisonInput:
+    """One consistent read-snapshot input for the comparison service."""
+
+    record: TraceQueryRecord
+    spans: tuple[Span, ...]
+
+
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _T = TypeVar("_T")
@@ -652,6 +660,32 @@ class Repository:
                 spans.append(self._span_from_rows(row, io_row))
         return spans
 
+    def get_trace_comparison_inputs(
+        self,
+        left_trace_id: str,
+        right_trace_id: str,
+    ) -> tuple[TraceComparisonInput | None, TraceComparisonInput | None]:
+        """Read both comparison inputs under one consistent SQLite snapshot."""
+
+        validate_trace_id(left_trace_id)
+        validate_trace_id(right_trace_id)
+        with self.transaction():
+            left_record = self.get_trace_query(left_trace_id)
+            right_record = self.get_trace_query(right_trace_id)
+            left_spans = self.get_spans_for_trace(left_trace_id)
+            right_spans = self.get_spans_for_trace(right_trace_id)
+            left_input = (
+                None
+                if left_record is None
+                else TraceComparisonInput(left_record, tuple(left_spans or ()))
+            )
+            right_input = (
+                None
+                if right_record is None
+                else TraceComparisonInput(right_record, tuple(right_spans or ()))
+            )
+        return left_input, right_input
+
     def health_check(self) -> bool:
         """Verify that the configured SQLite connection is readable."""
 
@@ -879,6 +913,7 @@ __all__ = [
     "Repository",
     "SQLiteRepository",
     "TraceQueryRecord",
+    "TraceComparisonInput",
     "TraceStats",
     "TraceSummaryRecord",
     "timestamp_to_us",
