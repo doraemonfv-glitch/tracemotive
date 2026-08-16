@@ -62,27 +62,19 @@ pip install "tracemotive[server,openai-agents]"
 - An OpenAI API key is needed only for the real OpenAI Agents example, not for
   the deterministic test suite or core SDK smoke.
 
-## Quick trial — try TraceMotive in ~10 minutes
+## Quick trial — deterministic v0.3 investigation demo
 
 This is a short first-run path for evaluation. It uses the deterministic Python
 SDK trace below, so it does not require an OpenAI API key. The released wheel
 contains the production UI; Node.js/npm are not required.
 
-1. Clone the repository and enter it. The clone and directory commands are the
-   same in PowerShell and POSIX shells:
-
-   ```text
-   git clone https://github.com/doraemonfv-glitch/tracemotive.git
-   cd tracemotive
-   ```
-
-2. Create and activate a Python environment, then install the server extra:
+1. In a fresh Python environment, install the server extra:
 
    ```text
    python -m pip install "tracemotive[server]"
    ```
 
-3. Start the single-command local experience:
+2. Start the single-command local experience:
 
    ```text
    tracemotive serve
@@ -93,18 +85,27 @@ contains the production UI; Node.js/npm are not required.
    database path. Use `tracemotive serve --db :memory:` only for an explicit
    ephemeral session.
 
-4. In a second terminal, run the [minimal Python SDK usage](#minimal-python-sdk-usage)
-   block. It creates the deterministic `demo` trace and sends it to the local
-   server. No model or external API request is made.
+3. In a second terminal, run the deterministic demo seed command:
 
-5. Open `http://127.0.0.1:8765` in a browser, select the new `demo` trace, and
-   inspect its Trace Detail, Span Tree, Timeline, and Span Inspector. Select
-   two traces to view structural observed differences. The
+   ```text
+   tracemotive demo
+   ```
+
+   It creates a fresh reference/changed pair through the public SDK and local
+   Collector path. No model, API key, or external network request is made.
+
+4. Open the printed comparison URL in a browser. The v0.3 investigation view
+   should show the first supported policy-output observation, later observed
+   evidence, and uncertainty/context boundaries without claiming causality.
+   The detailed v0.2 comparison remains available below the insight.
+   Each invocation creates a fresh pair; if a later seed step fails, any
+   already-persisted demo trace remains untouched and can be inspected or left
+   in place for a subsequent run.
    [OpenAI Agents example](#openai-agents-sdk-integration-and-example) is the
    alternative path if you want to try a real framework integration; it makes
    a real model request and requires its documented extra and API key.
 
-6. Share what worked, what was unclear, and what you expected to see in a
+5. Share what worked, what was unclear, and what you expected to see in a
    [GitHub Issue](https://github.com/doraemonfv-glitch/tracemotive/issues).
    Include your OS and Python/Node versions plus sanitized setup output, and
    do not include API keys or other credentials. Use

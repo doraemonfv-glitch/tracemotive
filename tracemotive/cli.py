@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from tracemotive.collector import DEFAULT_BIND_HOST, create_app
+from tracemotive.demo import DEFAULT_DEMO_ENDPOINT, DemoError, format_demo_result, seed_demo
 from tracemotive.storage import (
     DatabasePathError,
     MigrationError,
@@ -50,6 +51,14 @@ def _parser() -> argparse.ArgumentParser:
         help=f"loopback port (default: {DEFAULT_PORT})",
     )
     serve.set_defaults(handler=_run_serve)
+    demo = commands.add_parser("demo", help="seed the deterministic local v0.3 demo")
+    demo.add_argument(
+        "--endpoint",
+        default=DEFAULT_DEMO_ENDPOINT,
+        metavar="URL",
+        help=f"existing loopback TraceMotive server (default: {DEFAULT_DEMO_ENDPOINT})",
+    )
+    demo.set_defaults(handler=_run_demo)
     return parser
 
 
@@ -119,6 +128,16 @@ def _run_serve(arguments: argparse.Namespace) -> int:
                 print("tracemotive serve: database shutdown failure", file=sys.stderr)
                 exit_code = 1
     return exit_code
+
+
+def _run_demo(arguments: argparse.Namespace) -> int:
+    try:
+        result = seed_demo(arguments.endpoint)
+    except DemoError as exc:
+        print(f"tracemotive demo: {exc}", file=sys.stderr)
+        return 1
+    print(format_demo_result(result))
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
