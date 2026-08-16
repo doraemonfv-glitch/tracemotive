@@ -742,10 +742,18 @@ def analyze_divergence(
     left_spans: Sequence[Span],
     right: TraceQueryRecord,
     right_spans: Sequence[Span],
+    *,
+    comparison: Mapping[str, Any] | None = None,
 ) -> DivergenceResult:
-    """Analyze two persisted Canonical read models without mutating storage."""
+    """Analyze two persisted Canonical read models without mutating storage.
 
-    comparison = compare_trace_inputs(left, left_spans, right, right_spans)
+    ``comparison`` is an internal composition hook for the v0.3 HTTP read
+    model.  Supplying the already-derived v0.2 result avoids rebuilding the
+    same structural comparison; it does not change V03-11 selection rules.
+    """
+
+    if comparison is None:
+        comparison = compare_trace_inputs(left, left_spans, right, right_spans)
     left_by_id = _span_map(left_spans)
     right_by_id = _span_map(right_spans)
     barriers, globally_invalid = _structural_barriers(comparison, left, right)

@@ -21,6 +21,7 @@ from tracemotive.canonical.models import (
     validate_trace_id,
 )
 from tracemotive.comparison import ComparisonTooLargeError, compare_trace_inputs
+from tracemotive.api_v3 import build_v3_comparison
 from tracemotive.storage import Repository, TraceStats, TraceSummaryRecord
 from tracemotive.storage.repository import timestamp_to_us
 
@@ -256,6 +257,37 @@ def register_query_routes(app: Any, repository: Repository) -> None:
             return _json_response(
                 Response,
                 compare_trace_inputs(
+                    left_input.record,
+                    left_input.spans,
+                    right_input.record,
+                    right_input.spans,
+                ),
+            )
+        except QueryRequestError:
+            return _error(Response, 400, "invalid_request", "invalid request")
+        except ComparisonTooLargeError:
+            return _error(Response, 413, "comparison_too_large", "comparison too large")
+        except Exception:
+            return _error(Response, 500, "internal_error", "internal error")
+
+    @app.get("/api/v3/compare/{left_trace_id}/{right_trace_id}")
+    async def compare_traces_v3(request: Request, left_trace_id: str, right_trace_id: str) -> Response:
+        try:
+            if request.query_params:
+                raise QueryRequestError("invalid query parameter")
+            left_trace_id = _validated_id(left_trace_id, validate_trace_id)
+            right_trace_id = _validated_id(right_trace_id, validate_trace_id)
+            if left_trace_id == right_trace_id:
+                raise QueryRequestError("comparison requires distinct traces")
+            left_input, right_input = repository.get_trace_comparison_inputs(
+                left_trace_id,
+                right_trace_id,
+            )
+            if left_input is None or right_input is None:
+                return _error(Response, 404, "not_found", "not found")
+            return _json_response(
+                Response,
+                build_v3_comparison(
                     left_input.record,
                     left_input.spans,
                     right_input.record,

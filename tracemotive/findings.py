@@ -711,10 +711,18 @@ def collect_findings(
     left_spans: Sequence[Span],
     right: TraceQueryRecord,
     right_spans: Sequence[Span],
+    *,
+    comparison: Mapping[str, Any] | None = None,
 ) -> DiagnosticFindings:
-    """Collect deterministic V03-20 findings from one read-model comparison."""
+    """Collect deterministic V03-20 findings from one read-model comparison.
 
-    comparison = compare_trace_inputs(left, left_spans, right, right_spans)
+    ``comparison`` is an internal composition hook for the v0.3 HTTP read
+    model.  It accepts one already-derived v0.2 comparison without changing
+    finding selection, IDs, or public V03-20 semantics.
+    """
+
+    if comparison is None:
+        comparison = compare_trace_inputs(left, left_spans, right, right_spans)
     left_by_id = _span_map(left_spans)
     right_by_id = _span_map(right_spans)
     complete = _trace_complete(left) and _trace_complete(right)
