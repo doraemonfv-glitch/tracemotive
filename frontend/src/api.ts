@@ -24,8 +24,19 @@ import type {
   ComparisonTraceField,
   ComparisonTraceView,
   ComparisonUnavailableSpan,
+  InvestigationCoordinate,
+  InvestigationEvidenceReference,
+  InvestigationFinding,
+  InvestigationFindingType,
+  InvestigationState,
+  InvestigationStartingPoint,
+  InvestigationSummaryView,
+  InvestigationUncertainty,
+  InsightDetailEndpoint,
+  InsightTraceIdentity,
   TraceDetailResponse,
   TraceHeader,
+  TraceInsightResponse,
   TraceListFilters,
   TraceListResponse,
   TraceStats,
@@ -747,6 +758,382 @@ export function decodeComparisonResponse(text: string, leftTraceId: string, righ
   };
 }
 
+const INVESTIGATION_STATES = ["identified", "uncertain", "none"] as const;
+const INVESTIGATION_FINDING_TYPES: readonly InvestigationFindingType[] = [
+  "new_error",
+  "resolved_error",
+  "tool_input_changed",
+  "tool_output_changed",
+  "tool_added",
+  "tool_removed",
+  "execution_subtree_added",
+  "execution_subtree_removed",
+  "tool_repetition_changed",
+  "model_changed",
+  "request_parameters_changed",
+  "trace_status_changed",
+];
+
+function decodeCanonicalObject(value: unknown): CanonicalJsonObject | undefined {
+  return isRecord(value) ? value as CanonicalJsonObject : undefined;
+}
+
+function decodeCanonicalObjectArray(value: unknown): CanonicalJsonObject[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const objects = value.map(decodeCanonicalObject);
+  return objects.some((item) => item === undefined) ? undefined : objects as CanonicalJsonObject[];
+}
+
+function decodeInsightCoordinate(value: unknown): InvestigationCoordinate | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "semantic_path", "group_signature"])) {
+    return undefined;
+  }
+  if (value.kind !== "span" && value.kind !== "sibling_group" && value.kind !== "trace_summary") {
+    return undefined;
+  }
+  const semanticPath = decodeComparisonPath(value.semantic_path);
+  const groupSignature = value.group_signature === null ? null : decodeComparisonSignature(value.group_signature);
+  if (semanticPath === undefined || (value.group_signature !== null && groupSignature === undefined)) {
+    return undefined;
+  }
+  return { kind: value.kind, semantic_path: semanticPath, group_signature: groupSignature ?? null };
+}
+
+function decodeInsightRef(value: unknown): ComparisonSpanRef | null | undefined {
+  return value === null ? null : decodeComparisonRef(value);
+}
+
+function decodeInsightFinding(value: unknown): InvestigationFinding | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "finding_id",
+    "type",
+    "coordinate",
+    "left",
+    "right",
+    "field_path",
+    "scope",
+    "observation_state",
+    "reason_code",
+    "observed",
+    "evidence",
+    "relationships",
+  ])) {
+    return undefined;
+  }
+  const coordinate = decodeInsightCoordinate(value.coordinate);
+  const left = decodeInsightRef(value.left);
+  const right = decodeInsightRef(value.right);
+  const observed = decodeCanonicalObject(value.observed);
+  const evidence = decodeCanonicalObjectArray(value.evidence);
+  const relationships = Array.isArray(value.relationships) ? value.relationships.map((item) => {
+    if (!isRecord(item) || typeof item.relation !== "string" || (item.structural_relation !== undefined && typeof item.structural_relation !== "string")) {
+      return undefined;
+    }
+    return { relation: item.relation, structural_relation: item.structural_relation as string | undefined };
+  }) : undefined;
+  if (
+    typeof value.finding_id !== "string" ||
+    !INVESTIGATION_FINDING_TYPES.includes(value.type as InvestigationFindingType) ||
+    coordinate === undefined ||
+    left === undefined ||
+    right === undefined ||
+    (typeof value.field_path !== "string" && value.field_path !== null) ||
+    (value.scope !== "behavioral" && value.scope !== "context_only") ||
+    (value.observation_state !== "confirmed_observation" && value.observation_state !== "observation_limited") ||
+    typeof value.reason_code !== "string" ||
+    observed === undefined ||
+    evidence === undefined ||
+    relationships === undefined ||
+    relationships.some((item) => item === undefined)
+  ) {
+    return undefined;
+  }
+  return {
+    finding_id: value.finding_id,
+    type: value.type as InvestigationFindingType,
+    coordinate,
+    left,
+    right,
+    field_path: value.field_path,
+    scope: value.scope,
+    observation_state: value.observation_state,
+    reason_code: value.reason_code,
+    observed,
+    evidence,
+    relationships: relationships as InvestigationFinding["relationships"],
+  };
+}
+
+function decodeInsightUncertainty(value: unknown): InvestigationUncertainty | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["uncertainty_id", "coordinate", "reason_code", "side", "blocks_earlier_claim", "evidence"])) {
+    return undefined;
+  }
+  const coordinate = value.coordinate === null ? null : decodeInsightCoordinate(value.coordinate);
+  const evidence = decodeCanonicalObjectArray(value.evidence);
+  if (
+    typeof value.uncertainty_id !== "string" ||
+    (value.coordinate !== null && coordinate === undefined) ||
+    typeof value.reason_code !== "string" ||
+    (value.side !== "left" && value.side !== "right" && value.side !== "both") ||
+    typeof value.blocks_earlier_claim !== "boolean" ||
+    evidence === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    uncertainty_id: value.uncertainty_id,
+    coordinate: coordinate ?? null,
+    reason_code: value.reason_code,
+    side: value.side,
+    blocks_earlier_claim: value.blocks_earlier_claim,
+    evidence,
+  };
+}
+
+function decodeInsightStartingPoint(value: unknown): InvestigationStartingPoint | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  if (!isRecord(value) || !hasExactKeys(value, ["kind", "semantic_path", "group_signature", "left", "right", "finding_id", "label"])) {
+    return undefined;
+  }
+  const coordinate = decodeInsightCoordinate({
+    kind: value.kind,
+    semantic_path: value.semantic_path,
+    group_signature: value.group_signature,
+  });
+  const left = decodeInsightRef(value.left);
+  const right = decodeInsightRef(value.right);
+  if (coordinate === undefined || left === undefined || right === undefined || typeof value.finding_id !== "string" || typeof value.label !== "string") {
+    return undefined;
+  }
+  return { ...coordinate, left, right, finding_id: value.finding_id, label: value.label };
+}
+
+function decodeLastReliablyMatchedPoint(value: unknown): InvestigationSummaryView["last_reliably_matched_point"] | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["semantic_path", "left", "right", "state", "reason"])) {
+    return undefined;
+  }
+  const semanticPath = decodeComparisonPath(value.semantic_path);
+  const left = decodeInsightRef(value.left);
+  const right = decodeInsightRef(value.right);
+  if (semanticPath === undefined || left === undefined || right === undefined || (value.state !== "none" && value.state !== "matched") || typeof value.reason !== "string") {
+    return undefined;
+  }
+  return { semantic_path: semanticPath, left, right, state: value.state, reason: value.reason };
+}
+
+function decodeInvestigationSummary(value: unknown): InvestigationSummaryView | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    "state",
+    "ordering_basis",
+    "starting_point",
+    "first_meaningful_divergence",
+    "last_reliably_matched_point",
+    "evidence_summary",
+    "context_finding_ids",
+    "blocking_uncertainty_ids",
+    "limitations",
+  ]) || !INVESTIGATION_STATES.includes(value.state as InvestigationSummaryView["state"]) || value.ordering_basis !== "structural_triage_order") {
+    return undefined;
+  }
+  const startingPoint = decodeInsightStartingPoint(value.starting_point);
+  const first = isRecord(value.first_meaningful_divergence) && hasExactKeys(value.first_meaningful_divergence, ["state", "ordering_basis", "finding_id", "reason_code"])
+    ? value.first_meaningful_divergence
+    : undefined;
+  const last = decodeLastReliablyMatchedPoint(value.last_reliably_matched_point);
+  const evidenceSummary = Array.isArray(value.evidence_summary) ? value.evidence_summary.map((item) => {
+    if (!isRecord(item) || typeof item.finding_id !== "string" || typeof item.relation !== "string" || typeof item.structural_relation !== "string") {
+      return undefined;
+    }
+    return { finding_id: item.finding_id, relation: item.relation, structural_relation: item.structural_relation } satisfies InvestigationEvidenceReference;
+  }) : undefined;
+  const limitations = Array.isArray(value.limitations) ? value.limitations.map((item) => {
+    if (!isRecord(item) || typeof item.uncertainty_id !== "string" || typeof item.reason_code !== "string" || (item.side !== "left" && item.side !== "right" && item.side !== "both") || typeof item.blocks_earlier_claim !== "boolean") {
+      return undefined;
+    }
+    const coordinate = item.coordinate === null ? null : decodeInsightCoordinate(item.coordinate);
+    return coordinate === undefined && item.coordinate !== null ? undefined : {
+      uncertainty_id: item.uncertainty_id,
+      reason_code: item.reason_code,
+      side: item.side,
+      coordinate: coordinate ?? null,
+      blocks_earlier_claim: item.blocks_earlier_claim,
+    };
+  }) : undefined;
+  if (
+    startingPoint === undefined ||
+    first === undefined ||
+    !INVESTIGATION_STATES.includes(first.state as InvestigationState) ||
+    first.ordering_basis !== "structural_triage_order" ||
+    (typeof first.finding_id !== "string" && first.finding_id !== null) ||
+    (typeof first.reason_code !== "string" && first.reason_code !== null) ||
+    last === undefined ||
+    evidenceSummary === undefined ||
+    evidenceSummary.some((item) => item === undefined) ||
+    !Array.isArray(value.context_finding_ids) ||
+    value.context_finding_ids.some((item) => typeof item !== "string") ||
+    !Array.isArray(value.blocking_uncertainty_ids) ||
+    value.blocking_uncertainty_ids.some((item) => typeof item !== "string") ||
+    limitations === undefined ||
+    limitations.some((item) => item === undefined)
+  ) {
+    return undefined;
+  }
+  return {
+    state: value.state as InvestigationSummaryView["state"],
+    ordering_basis: "structural_triage_order",
+    starting_point: startingPoint,
+    first_meaningful_divergence: {
+      state: first.state as InvestigationSummaryView["state"],
+      ordering_basis: "structural_triage_order",
+      finding_id: first.finding_id,
+      reason_code: first.reason_code,
+    },
+    last_reliably_matched_point: last,
+    evidence_summary: evidenceSummary as InvestigationEvidenceReference[],
+    context_finding_ids: value.context_finding_ids,
+    blocking_uncertainty_ids: value.blocking_uncertainty_ids,
+    limitations: limitations as InvestigationSummaryView["limitations"],
+  };
+}
+
+function validateInsightReferences(
+  investigation: InvestigationSummaryView,
+  findings: InvestigationFinding[],
+  uncertainties: InvestigationUncertainty[],
+): boolean {
+  const findingsById = new Map<string, InvestigationFinding>();
+  for (const finding of findings) {
+    if (findingsById.has(finding.finding_id)) {
+      return false;
+    }
+    findingsById.set(finding.finding_id, finding);
+  }
+  const uncertaintiesById = new Map<string, InvestigationUncertainty>();
+  for (const uncertainty of uncertainties) {
+    if (uncertaintiesById.has(uncertainty.uncertainty_id)) {
+      return false;
+    }
+    uncertaintiesById.set(uncertainty.uncertainty_id, uncertainty);
+  }
+
+  const behavioralFinding = (findingId: string): boolean => findingsById.get(findingId)?.scope === "behavioral";
+  const contextFinding = (findingId: string): boolean => findingsById.get(findingId)?.scope === "context_only";
+  const unique = (items: string[]): boolean => new Set(items).size === items.length;
+
+  if (investigation.state === "identified" && investigation.starting_point === null) {
+    return false;
+  }
+  if (investigation.starting_point !== null && !behavioralFinding(investigation.starting_point.finding_id)) {
+    return false;
+  }
+  const firstFindingId = investigation.first_meaningful_divergence.finding_id;
+  if (firstFindingId !== null && !behavioralFinding(firstFindingId)) {
+    return false;
+  }
+  if (investigation.state === "identified" && (firstFindingId === null || investigation.starting_point?.finding_id !== firstFindingId)) {
+    return false;
+  }
+
+  const evidenceIds = investigation.evidence_summary.map((reference) => reference.finding_id);
+  if (!unique(evidenceIds) || evidenceIds.some((findingId) => !behavioralFinding(findingId))) {
+    return false;
+  }
+  const contextIds = investigation.context_finding_ids;
+  if (!unique(contextIds) || contextIds.some((findingId) => !contextFinding(findingId))) {
+    return false;
+  }
+  const blockingIds = investigation.blocking_uncertainty_ids;
+  if (!unique(blockingIds) || blockingIds.some((uncertaintyId) => !uncertaintiesById.has(uncertaintyId))) {
+    return false;
+  }
+  const limitationIds = investigation.limitations.map((limitation) => limitation.uncertainty_id);
+  return unique(limitationIds) && limitationIds.every((uncertaintyId) => uncertaintiesById.has(uncertaintyId));
+}
+
+function decodeInsightTraceIdentity(value: unknown, expectedTraceId: string): InsightTraceIdentity | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["trace_id", "name", "status"]) || value.trace_id !== expectedTraceId || typeof value.name !== "string" || (value.status !== "unset" && value.status !== "ok" && value.status !== "error")) {
+    return undefined;
+  }
+  return { trace_id: value.trace_id, name: value.name, status: value.status };
+}
+
+function decodeInsightAlignment(value: unknown): ComparisonAlignmentSummary | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["matched_spans", "left_only_spans", "right_only_spans", "ambiguous_groups", "unavailable_spans"])) {
+    return undefined;
+  }
+  const fields = ["matched_spans", "left_only_spans", "right_only_spans", "ambiguous_groups", "unavailable_spans"] as const;
+  const counts = fields.map((field) => exactNonnegativeInteger(value[field]));
+  return counts.some((item) => item === undefined) ? undefined : {
+    matched_spans: counts[0] as bigint,
+    left_only_spans: counts[1] as bigint,
+    right_only_spans: counts[2] as bigint,
+    ambiguous_groups: counts[3] as bigint,
+    unavailable_spans: counts[4] as bigint,
+  };
+}
+
+function decodeInsightDetailEndpoint(value: unknown, leftTraceId: string, rightTraceId: string): InsightDetailEndpoint | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["method", "path", "comparison_version"]) || value.method !== "GET" || value.comparison_version !== "0.2" || value.path !== comparisonUrl(leftTraceId, rightTraceId)) {
+    return undefined;
+  }
+  return { method: "GET", path: value.path, comparison_version: "0.2" };
+}
+
+export function decodeInsightComparisonResponse(text: string, leftTraceId: string, rightTraceId: string): TraceInsightResponse {
+  const value: unknown = parse(text);
+  if (!isRecord(value) || !hasExactKeys(value, ["comparison_version", "left_trace", "right_trace", "summary", "investigation", "findings", "uncertainties", "detail_endpoint"]) || value.comparison_version !== "0.3") {
+    throw new Error("Trace insight response was invalid");
+  }
+  const leftTrace = decodeInsightTraceIdentity(value.left_trace, leftTraceId);
+  const rightTrace = decodeInsightTraceIdentity(value.right_trace, rightTraceId);
+  const summaryValue = isRecord(value.summary) && hasExactKeys(value.summary, ["alignment", "finding_count", "uncertainty_count", "trace_fields"]) ? value.summary : undefined;
+  const alignment = summaryValue === undefined ? undefined : decodeInsightAlignment(summaryValue.alignment);
+  const findingCount = summaryValue === undefined ? undefined : exactNonnegativeInteger(summaryValue.finding_count);
+  const uncertaintyCount = summaryValue === undefined ? undefined : exactNonnegativeInteger(summaryValue.uncertainty_count);
+  const traceFields = summaryValue === undefined ? undefined : decodeComparisonTraceFields(summaryValue.trace_fields);
+  const investigation = decodeInvestigationSummary(value.investigation);
+  const findings = Array.isArray(value.findings) ? value.findings.map(decodeInsightFinding) : undefined;
+  const uncertainties = Array.isArray(value.uncertainties) ? value.uncertainties.map(decodeInsightUncertainty) : undefined;
+  const detailEndpoint = decodeInsightDetailEndpoint(value.detail_endpoint, leftTraceId, rightTraceId);
+  if (
+    leftTrace === undefined ||
+    rightTrace === undefined ||
+    summaryValue === undefined ||
+    alignment === undefined ||
+    findingCount === undefined ||
+    uncertaintyCount === undefined ||
+    traceFields === undefined ||
+    investigation === undefined ||
+    findings === undefined ||
+    findings.some((item) => item === undefined) ||
+    uncertainties === undefined ||
+    uncertainties.some((item) => item === undefined) ||
+    detailEndpoint === undefined
+  ) {
+    throw new Error("Trace insight response was invalid");
+  }
+  if (findingCount !== BigInt(findings.length) || uncertaintyCount !== BigInt(uncertainties.length)) {
+    throw new Error("Trace insight response was invalid");
+  }
+  if (!validateInsightReferences(investigation, findings as InvestigationFinding[], uncertainties as InvestigationUncertainty[])) {
+    throw new Error("Trace insight response was invalid");
+  }
+  return {
+    comparison_version: "0.3",
+    left_trace: leftTrace,
+    right_trace: rightTrace,
+    summary: { alignment, finding_count: findingCount, uncertainty_count: uncertaintyCount, trace_fields: traceFields },
+    investigation,
+    findings: findings as InvestigationFinding[],
+    uncertainties: uncertainties as InvestigationUncertainty[],
+    detail_endpoint: detailEndpoint,
+  };
+}
+
 export function traceListUrl(filters: TraceListFilters): string {
   const parameters = new URLSearchParams({
     limit: String(filters.limit),
@@ -777,6 +1164,10 @@ export function spanDetailUrl(traceId: string, spanId: string): string {
 
 export function comparisonUrl(leftTraceId: string, rightTraceId: string): string {
   return `/api/v2/compare/${encodeURIComponent(leftTraceId)}/${encodeURIComponent(rightTraceId)}`;
+}
+
+export function insightComparisonUrl(leftTraceId: string, rightTraceId: string): string {
+  return `/api/v3/compare/${encodeURIComponent(leftTraceId)}/${encodeURIComponent(rightTraceId)}`;
 }
 
 export async function fetchTraceList(
@@ -839,5 +1230,18 @@ export async function fetchSpanDetail(traceId: string, spanId: string, signal: A
 
 export async function fetchTraceComparison(leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceComparisonResponse> {
   const responseText = await fetchQueryApiText(comparisonUrl(leftTraceId, rightTraceId), signal);
+  return decodeComparisonResponse(responseText, leftTraceId, rightTraceId);
+}
+
+export async function fetchInsightComparison(leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceInsightResponse> {
+  const responseText = await fetchQueryApiText(insightComparisonUrl(leftTraceId, rightTraceId), signal);
+  return decodeInsightComparisonResponse(responseText, leftTraceId, rightTraceId);
+}
+
+export async function fetchComparisonDetail(detailEndpoint: InsightDetailEndpoint, leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceComparisonResponse> {
+  if (detailEndpoint.method !== "GET" || detailEndpoint.comparison_version !== "0.2" || detailEndpoint.path !== comparisonUrl(leftTraceId, rightTraceId)) {
+    throw new Error("Trace detail endpoint was invalid");
+  }
+  const responseText = await fetchQueryApiText(detailEndpoint.path, signal);
   return decodeComparisonResponse(responseText, leftTraceId, rightTraceId);
 }

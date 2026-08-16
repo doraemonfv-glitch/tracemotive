@@ -1,18 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { fetchTraceComparison, QueryApiError } from "./api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchComparisonDetail, fetchInsightComparison, QueryApiError } from "./api";
+import { ComparisonInsight } from "./comparison-insight";
 import type {
   ComparisonFieldRecord,
   ComparisonSpanRecord,
   ComparisonTraceField,
   ComparisonTraceView,
   TraceComparisonResponse,
+  TraceInsightResponse,
   TraceStats,
 } from "./types";
 
 type ComparisonViewState =
   | { kind: "loading" }
-  | { kind: "loaded"; response: TraceComparisonResponse }
+  | { kind: "loaded"; response: TraceInsightResponse }
   | { kind: "same-trace" }
+  | { kind: "not-found" }
+  | { kind: "invalid" }
+  | { kind: "too-large" }
+  | { kind: "error" };
+
+type DetailViewState =
+  | { kind: "closed" }
+  | { kind: "loading" }
+  | { kind: "loaded"; response: TraceComparisonResponse }
   | { kind: "not-found" }
   | { kind: "invalid" }
   | { kind: "too-large" }
@@ -368,12 +379,32 @@ function ComparisonResults({ response }: { response: TraceComparisonResponse }) 
   );
 }
 
-function ComparisonError({ kind }: { kind: Exclude<ComparisonViewState["kind"], "loading" | "loaded"> }) {
+function ComparisonDetail({ state }: { state: DetailViewState }) {
+  if (state.kind === "closed") {
+    return null;
+  }
+  if (state.kind === "loading") {
+    return <section className="state-message comparison-detail-loading" aria-live="polite" aria-busy="true">Loading detailed comparison...</section>;
+  }
+  if (state.kind !== "loaded") {
+    return <section className="comparison-detail-error"><ComparisonError kind={state.kind} /></section>;
+  }
+  return (
+    <section className="comparison-detail-section" aria-label="Detailed structural comparison">
+      <TraceSummaryComparison response={state.response} />
+      <ComparisonResults response={state.response} />
+    </section>
+  );
+}
+
+type ComparisonErrorKind = "same-trace" | "not-found" | "invalid" | "too-large" | "error";
+
+function ComparisonError({ kind }: { kind: ComparisonErrorKind }) {
   const messages: Record<typeof kind, string> = {
     "same-trace": "Choose two different traces to compare.",
     "not-found": "One or both selected traces were not found.",
     invalid: "The comparison request was invalid.",
-    "too-large": "This comparison is too large to display. Choose smaller traces.",
+    "too-large": "This comparison exceeds TraceMotive's supported analysis/response limit.",
     error: "Unable to load the comparison.",
   };
   return <section className={`state-message ${kind === "error" || kind === "too-large" ? "state-error" : ""}`} role={kind === "error" || kind === "too-large" ? "alert" : undefined}><p>{messages[kind]}</p></section>;
@@ -381,18 +412,25 @@ function ComparisonError({ kind }: { kind: Exclude<ComparisonViewState["kind"], 
 
 export function TraceComparison({ leftTraceId, rightTraceId, onBack }: { leftTraceId: string; rightTraceId: string; onBack: () => void }) {
   const [view, setView] = useState<ComparisonViewState>(() => leftTraceId === rightTraceId ? { kind: "same-trace" } : { kind: "loading" });
+  const [detail, setDetail] = useState<DetailViewState>({ kind: "closed" });
   const requestIdentity = useRef(0);
+  const detailRequestIdentity = useRef(0);
+  const detailController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const currentRequest = requestIdentity.current + 1;
     requestIdentity.current = currentRequest;
+    detailRequestIdentity.current += 1;
+    detailController.current?.abort();
+    detailController.current = null;
+    setDetail({ kind: "closed" });
     if (leftTraceId === rightTraceId) {
       setView({ kind: "same-trace" });
       return;
     }
     const controller = new AbortController();
     setView({ kind: "loading" });
-    void fetchTraceComparison(leftTraceId, rightTraceId, controller.signal).then(
+    void fetchInsightComparison(leftTraceId, rightTraceId, controller.signal).then(
       (response) => {
         if (requestIdentity.current === currentRequest) {
           setView({ kind: "loaded", response });
@@ -412,6 +450,35 @@ export function TraceComparison({ leftTraceId, rightTraceId, onBack }: { leftTra
     return () => controller.abort();
   }, [leftTraceId, rightTraceId]);
 
+  const openDetails = useCallback(() => {
+    if (view.kind !== "loaded") {
+      return;
+    }
+    detailController.current?.abort();
+    const controller = new AbortController();
+    detailController.current = controller;
+    const currentRequest = detailRequestIdentity.current + 1;
+    detailRequestIdentity.current = currentRequest;
+    setDetail({ kind: "loading" });
+    void fetchComparisonDetail(view.response.detail_endpoint, leftTraceId, rightTraceId, controller.signal).then(
+      (response) => {
+        if (detailRequestIdentity.current === currentRequest) {
+          setDetail({ kind: "loaded", response });
+        }
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted || detailRequestIdentity.current !== currentRequest) {
+          return;
+        }
+        if (error instanceof QueryApiError) {
+          setDetail({ kind: error.status === 404 ? "not-found" : error.status === 400 ? "invalid" : error.status === 413 ? "too-large" : "error" });
+          return;
+        }
+        setDetail({ kind: "error" });
+      },
+    );
+  }, [leftTraceId, rightTraceId, view]);
+
   return (
     <main className="comparison-page">
       <header className="comparison-page-header">
@@ -424,8 +491,8 @@ export function TraceComparison({ leftTraceId, rightTraceId, onBack }: { leftTra
       {view.kind !== "loading" && view.kind !== "loaded" && <ComparisonError kind={view.kind} />}
       {view.kind === "loaded" && (
         <>
-          <TraceSummaryComparison response={view.response} />
-          <ComparisonResults response={view.response} />
+          <ComparisonInsight response={view.response} onOpenDetails={openDetails} detailsState={detail.kind} />
+          <ComparisonDetail state={detail} />
         </>
       )}
     </main>

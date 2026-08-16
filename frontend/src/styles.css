@@ -236,6 +236,73 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
 .ambiguous-group-count strong { color: #27334a; font-size: 1rem; }
 .comparison-unavailable-reason { color: #84242d; }
 
+.comparison-insight { display: grid; gap: 22px; margin-bottom: 28px; min-width: 0; }
+.insight-state-panel { align-items: start; background: #ffffff; border: 1px solid #dce1ea; border-left: 6px solid #61718b; border-radius: 10px; display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.65fr); padding: 22px; }
+.insight-state-identified { border-left-color: #2f7a58; }
+.insight-state-uncertain { background: #fffaf0; border-color: #e5c56b; border-left-color: #b8791c; }
+.insight-state-none { border-left-color: #68758c; }
+.insight-state-panel h2 { font-size: 1.55rem; letter-spacing: -0.03em; margin: 8px 0 6px; }
+.insight-state-panel p:not(.eyebrow) { color: #3e485b; margin: 0; max-width: 720px; }
+.insight-state-badge, .insight-observation-badge, .insight-relation-badge, .insight-context-badge, .insight-uncertainty-badge, .insight-structural-label { border-radius: 999px; display: inline-block; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.035em; padding: 4px 8px; text-transform: uppercase; }
+.insight-state-badge { background: #eef2f9; color: #3e4c67; }
+.insight-state-identified .insight-state-badge { background: #dff5e8; color: #17633a; }
+.insight-state-uncertain .insight-state-badge { background: #fff1cf; color: #735500; }
+.insight-trace-pair { display: grid; gap: 10px; min-width: 0; }
+.insight-trace-pair > div { background: #f7f9fc; border: 1px solid #e0e5ee; border-radius: 7px; display: grid; gap: 4px; min-width: 0; padding: 11px 12px; }
+.insight-trace-pair strong { overflow-wrap: anywhere; }
+.insight-trace-pair code { margin: 0; }
+.insight-order-note { background: #f6f8fc; border: 1px solid #e0e5ee; border-radius: 7px; color: #4f5b70; font-size: 0.82rem; margin: 0; padding: 10px 12px; }
+.insight-primary-section, .insight-additional-section, .insight-context-section, .insight-uncertainty-section, .insight-detail-action { min-width: 0; }
+.insight-primary-section > .section-heading, .insight-additional-section > .section-heading, .insight-context-section > .section-heading, .insight-uncertainty-section > .section-heading { margin-bottom: 10px; }
+.insight-primary-section h2, .insight-additional-section h2, .insight-context-section h2, .insight-uncertainty-section h2, .insight-detail-action h2 { font-size: 1.25rem; letter-spacing: -0.02em; margin: 0; }
+.insight-structural-label { background: #eef2f9; color: #566176; }
+.insight-finding-list, .insight-uncertainty-list { display: grid; gap: 12px; min-width: 0; }
+.insight-finding-card { background: #ffffff; border: 1px solid #dce1ea; border-radius: 10px; min-width: 0; padding: 17px; }
+.insight-finding-primary { border-color: #9cc9ae; box-shadow: 0 5px 18px rgb(42 83 64 / 0.08); }
+.insight-finding-heading { align-items: start; display: flex; gap: 14px; justify-content: space-between; min-width: 0; }
+.insight-finding-heading h3 { font-size: 1.06rem; margin: 9px 0 4px; overflow-wrap: anywhere; }
+.insight-observation-badge { background: #dff5e8; color: #17633a; }
+.insight-finding-card:has(.insight-observation-badge + .insight-relation-badge) .insight-observation-badge { margin-right: 6px; }
+.insight-relation-badge { background: #e7efff; color: #244e9e; }
+.insight-context-badge { background: #eef2f9; color: #566176; white-space: nowrap; }
+.insight-path { color: #566176; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; margin: 0; overflow-wrap: anywhere; }
+.insight-observation-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; min-width: 0; }
+.insight-observation-side { background: #f7f9fc; border: 1px solid #e0e5ee; border-radius: 7px; min-width: 0; padding: 11px; }
+.insight-observation-state { color: #3e485b; display: block; font-size: 0.76rem; margin: 6px 0; text-transform: capitalize; }
+.insight-value { min-width: 0; }
+.insight-value-label { color: #566176; display: block; font-size: 0.7rem; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+.insight-value pre, .insight-technical-details pre { background: #ffffff; border: 1px solid #e0e5ee; border-radius: 5px; color: #24324d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.77rem; line-height: 1.45; margin: 5px 0 0; max-height: 240px; max-width: 100%; overflow: auto; padding: 9px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.disclosure-value { background: #ffffff; border: 1px solid #e0e5ee; border-radius: 5px; margin-top: 5px; min-width: 0; }
+.disclosure-value summary { color: #244e9e; cursor: pointer; font-size: 0.78rem; list-style-position: inside; padding: 9px; }
+.disclosure-value pre { border: 0; border-top: 1px solid #e0e5ee; margin: 0; max-height: 320px; }
+.insight-muted, .insight-section-note, .insight-epistemic-disclaimer, .insight-last-matched p, .insight-detail-action p { color: #566176; font-size: 0.82rem; margin: 8px 0 0; }
+.insight-technical-details { border-top: 1px solid #e3e7ee; margin-top: 15px; padding-top: 12px; }
+.insight-technical-details summary { color: #566176; cursor: pointer; font-size: 0.78rem; font-weight: 700; }
+.insight-detail-list { display: grid; gap: 7px; margin: 12px 0 0; }
+.insight-detail-list > div { display: grid; gap: 6px; grid-template-columns: 130px minmax(0, 1fr); min-width: 0; }
+.insight-detail-list dt { color: #566176; font-size: 0.73rem; font-weight: 750; text-transform: uppercase; }
+.insight-detail-list dd { color: #172033; font-size: 0.78rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.insight-evidence-list { margin-top: 14px; }
+.insight-evidence-list pre { max-height: 220px; }
+.insight-epistemic-disclaimer { background: #eef7f1; border: 1px solid #b6d9c1; border-radius: 7px; color: #21553b; margin-top: 12px; padding: 11px 12px; }
+.insight-last-matched { background: #f7f9fc; border: 1px solid #e0e5ee; border-radius: 7px; display: grid; gap: 3px; margin-top: 12px; padding: 11px 12px; }
+.insight-last-matched strong { color: #27334a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
+.insight-uncertainty-card { background: #f7f9fc; border: 1px solid #dce1ea; border-radius: 9px; min-width: 0; padding: 15px; }
+.insight-uncertainty-blocking { background: #fffaf0; border-color: #e5c56b; box-shadow: inset 4px 0 #b8791c; }
+.insight-uncertainty-heading { align-items: start; display: flex; gap: 9px; min-width: 0; }
+.insight-uncertainty-heading h3 { font-size: 0.97rem; margin: 4px 0 0; overflow-wrap: anywhere; }
+.insight-uncertainty-badge { background: #eef2f9; color: #566176; }
+.insight-uncertainty-blocking .insight-uncertainty-badge { background: #fff1cf; color: #735500; }
+.insight-uncertainty-card > p { color: #4f5b70; font-size: 0.82rem; margin: 8px 0 0; }
+.insight-detail-action { align-items: center; background: #ffffff; border: 1px solid #dce1ea; border-radius: 10px; display: flex; gap: 18px; justify-content: space-between; padding: 17px; }
+.insight-detail-action h2 { font-size: 1rem; }
+.insight-detail-action .eyebrow { margin-bottom: 5px; }
+.insight-detail-action .primary-button { flex: 0 0 auto; }
+.insight-detail-open { color: #17633a; font-size: 0.82rem; font-weight: 700; }
+.comparison-detail-section { border-top: 2px solid #dce1ea; margin-top: 8px; padding-top: 26px; }
+.comparison-detail-loading { margin-top: 8px; }
+.comparison-detail-error { margin-top: 8px; }
+
 @media (max-width: 720px) {
   .trace-list-page { padding: 18px; }
   .trace-detail-page { padding: 18px; }
@@ -258,4 +325,9 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
   .comparison-metric-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
   .comparison-span-refs { max-width: none; min-width: 0; }
   .ambiguous-group-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  .insight-state-panel { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .insight-observation-grid { grid-template-columns: minmax(0, 1fr); }
+  .insight-finding-heading, .insight-detail-action { align-items: stretch; flex-direction: column; }
+  .insight-detail-action .primary-button { width: 100%; }
+  .insight-detail-list > div { grid-template-columns: minmax(105px, 0.35fr) minmax(0, 1fr); }
 }

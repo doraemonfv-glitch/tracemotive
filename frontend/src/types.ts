@@ -279,3 +279,125 @@ export interface TraceComparisonResponse {
   ambiguous_groups: ComparisonAmbiguousGroup[];
   unavailable_spans: ComparisonUnavailableSpan[];
 }
+
+export type InvestigationState = "identified" | "uncertain" | "none";
+export type InvestigationFindingType =
+  | "new_error"
+  | "resolved_error"
+  | "tool_input_changed"
+  | "tool_output_changed"
+  | "tool_added"
+  | "tool_removed"
+  | "execution_subtree_added"
+  | "execution_subtree_removed"
+  | "tool_repetition_changed"
+  | "model_changed"
+  | "request_parameters_changed"
+  | "trace_status_changed";
+export type InvestigationFindingScope = "behavioral" | "context_only";
+export type InvestigationObservationState = "confirmed_observation" | "observation_limited";
+
+export interface InvestigationCoordinate {
+  kind: "span" | "sibling_group" | "trace_summary";
+  semantic_path: ComparisonPathSegment[];
+  group_signature: ComparisonGroupSignature | null;
+}
+
+export interface InvestigationFinding {
+  finding_id: string;
+  type: InvestigationFindingType;
+  coordinate: InvestigationCoordinate;
+  left: ComparisonSpanRef | null;
+  right: ComparisonSpanRef | null;
+  field_path: string | null;
+  scope: InvestigationFindingScope;
+  observation_state: InvestigationObservationState;
+  reason_code: string;
+  observed: CanonicalJsonObject;
+  evidence: CanonicalJsonObject[];
+  relationships: Array<{ relation: string; structural_relation?: string }>;
+}
+
+export interface InvestigationUncertainty {
+  uncertainty_id: string;
+  coordinate: InvestigationCoordinate | null;
+  reason_code: string;
+  side: "left" | "right" | "both";
+  blocks_earlier_claim: boolean;
+  evidence: CanonicalJsonObject[];
+}
+
+export interface InvestigationEvidenceReference {
+  finding_id: string;
+  relation: string;
+  structural_relation: string;
+}
+
+export interface LastReliablyMatchedPoint {
+  semantic_path: ComparisonPathSegment[];
+  left: ComparisonSpanRef | null;
+  right: ComparisonSpanRef | null;
+  state: "none" | "matched";
+  reason: string;
+}
+
+export interface InvestigationStartingPoint {
+  kind: InvestigationCoordinate["kind"];
+  semantic_path: ComparisonPathSegment[];
+  group_signature: ComparisonGroupSignature | null;
+  left: ComparisonSpanRef | null;
+  right: ComparisonSpanRef | null;
+  finding_id: string;
+  label: string;
+}
+
+export interface InvestigationSummaryView {
+  state: InvestigationState;
+  ordering_basis: "structural_triage_order";
+  starting_point: InvestigationStartingPoint | null;
+  first_meaningful_divergence: {
+    state: InvestigationState;
+    ordering_basis: "structural_triage_order";
+    finding_id: string | null;
+    reason_code: string | null;
+  };
+  last_reliably_matched_point: LastReliablyMatchedPoint;
+  evidence_summary: InvestigationEvidenceReference[];
+  context_finding_ids: string[];
+  blocking_uncertainty_ids: string[];
+  limitations: Array<{
+    uncertainty_id: string;
+    reason_code: string;
+    side: "left" | "right" | "both";
+    coordinate: InvestigationCoordinate | null;
+    blocks_earlier_claim: boolean;
+  }>;
+}
+
+export interface InsightTraceIdentity {
+  trace_id: string;
+  name: string;
+  status: TraceStatus;
+}
+
+export interface InsightDetailEndpoint {
+  method: "GET";
+  path: string;
+  comparison_version: "0.2";
+}
+
+export interface TraceInsightResponse {
+  comparison_version: "0.3";
+  left_trace: InsightTraceIdentity;
+  right_trace: InsightTraceIdentity;
+  summary: {
+    alignment: ComparisonAlignmentSummary;
+    finding_count: bigint;
+    uncertainty_count: bigint;
+    trace_fields: ComparisonTraceField[];
+  };
+  investigation: InvestigationSummaryView;
+  findings: InvestigationFinding[];
+  uncertainties: InvestigationUncertainty[];
+  detail_endpoint: InsightDetailEndpoint;
+}

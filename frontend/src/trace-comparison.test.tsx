@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { comparisonUrl, decodeComparisonResponse } from "./api";
+import { comparisonUrl, decodeComparisonResponse, insightComparisonUrl } from "./api";
 import { comparisonRoute, TraceMotiveApp } from "./app";
 import { TraceComparison } from "./trace-comparison";
 import { TraceList } from "./trace-list";
@@ -8,6 +8,10 @@ import type { TraceListResponse, TraceSummary } from "./types";
 
 const leftId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const rightId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const middleLeftId = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const middleRightId = "ffffffffffffffffffffffffffffffff";
+const nextLeftId = "cccccccccccccccccccccccccccccccc";
+const nextRightId = "dddddddddddddddddddddddddddddddd";
 
 function ref(trace_id: string, span_id: string) {
   return { trace_id, span_id };
@@ -110,8 +114,94 @@ function comparisonPayload() {
   };
 }
 
+function insightPayload() {
+  const coordinate = {
+    kind: "span",
+    semantic_path: path("Changed tool"),
+    group_signature: null,
+  };
+  return {
+    comparison_version: "0.3",
+    left_trace: { trace_id: leftId, name: "Baseline run", status: "ok" },
+    right_trace: { trace_id: rightId, name: "Candidate run", status: "error" },
+    summary: {
+      alignment: { matched_spans: 2, left_only_spans: 1, right_only_spans: 1, ambiguous_groups: 1, unavailable_spans: 1 },
+      finding_count: 1,
+      uncertainty_count: 1,
+      trace_fields: [field("status", "different", "ok", "error")],
+    },
+    investigation: {
+      state: "identified",
+      ordering_basis: "structural_triage_order",
+      starting_point: { ...coordinate, left: ref(leftId, "changed-left"), right: ref(rightId, "changed-right"), finding_id: "finding-0001", label: "Inspect observed tool output change" },
+      first_meaningful_divergence: { state: "identified", ordering_basis: "structural_triage_order", finding_id: "finding-0001", reason_code: "captured_values_differ" },
+      last_reliably_matched_point: { semantic_path: path("Stable span"), left: ref(leftId, "stable-left"), right: ref(rightId, "stable-right"), state: "matched", reason: "before_first_finding" },
+      evidence_summary: [],
+      context_finding_ids: [],
+      blocking_uncertainty_ids: [],
+      limitations: [],
+    },
+    findings: [{
+      finding_id: "finding-0001",
+      type: "tool_output_changed",
+      coordinate,
+      left: ref(leftId, "changed-left"),
+      right: ref(rightId, "changed-right"),
+      field_path: "/output",
+      scope: "behavioral",
+      observation_state: "confirmed_observation",
+      reason_code: "captured_values_differ",
+      observed: { left: { state: "captured", value: { result: "safe" } }, right: { state: "captured", value: { result: "changed" } } },
+      evidence: [{ kind: "field_observation", path: "/output/result", left: "safe", right: "changed", state: "different", reason: null }],
+      relationships: [],
+    }],
+    uncertainties: [{ uncertainty_id: "uncertainty-0001", coordinate: null, reason_code: "capture_unavailable", side: "right", blocks_earlier_claim: false, evidence: [{ kind: "capture", state: "unknown" }] }],
+    detail_endpoint: { method: "GET", path: comparisonUrl(leftId, rightId), comparison_version: "0.2" },
+  };
+}
+
+function insightResponse(): Response {
+  return new Response(JSON.stringify(insightPayload()), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+function insightResponseFor(requestedLeftId: string, requestedRightId: string): Response {
+  const serialized = JSON.stringify(insightPayload()).replaceAll(leftId, requestedLeftId).replaceAll(rightId, requestedRightId);
+  const payload = JSON.parse(serialized) as Record<string, any>;
+  payload.left_trace.name = "Next baseline run";
+  payload.right_trace.name = "Next candidate run";
+  return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+function emptyInsightResponse(): Response {
+  const payload = insightPayload() as any;
+  payload.investigation = {
+    state: "none",
+    ordering_basis: "structural_triage_order",
+    starting_point: null,
+    first_meaningful_divergence: { state: "none", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
+    last_reliably_matched_point: { semantic_path: [], left: null, right: null, state: "none", reason: "no_prior_resolved_point" },
+    evidence_summary: [],
+    context_finding_ids: [],
+    blocking_uncertainty_ids: [],
+    limitations: [],
+  };
+  payload.findings = [];
+  payload.uncertainties = [];
+  payload.summary.finding_count = 0;
+  payload.summary.uncertainty_count = 0;
+  return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 function comparisonResponse(status = 200): Response {
   return new Response(JSON.stringify(comparisonPayload()), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function deferredFetch() {
+  const requests: Array<{ url: string; resolve: (response: Response) => void; reject: (error: unknown) => void }> = [];
+  const fetchMock = vi.fn((url: string) => new Promise<Response>((resolve, reject) => {
+    requests.push({ url, resolve, reject });
+  }));
+  return { fetchMock, requests };
 }
 
 function emptyComparisonResponse(): Response {
@@ -154,24 +244,30 @@ afterEach(() => {
 });
 
 describe("TraceComparison", () => {
-  it("decodes and requests the V02-20 endpoint without frontend alignment", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(comparisonResponse());
+  it("loads the v0.3 insight first and defers the v0.2 detail request", async () => {
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
 
     expect(screen.getByText("Loading comparison...")).toBeTruthy();
-    expect(await screen.findByText("Trace-level differences")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith(comparisonUrl(leftId, rightId), expect.objectContaining({ method: "GET" }));
+    expect((await screen.findAllByText("Investigation starting point")).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(insightComparisonUrl(leftId, rightId), expect.objectContaining({ method: "GET" }));
     expect(decodeComparisonResponse(JSON.stringify(comparisonPayload()), leftId, rightId).comparison_version).toBe("0.2");
   });
 
   it("shows summary, all classifications, counts, changed fields, and inert hostile content", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
     const { container } = render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
 
     expect(await screen.findByText("Baseline run")).toBeTruthy();
     expect(screen.getByText("Candidate run")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "View detailed comparison" }));
+    expect(await screen.findByText("Trace-level differences")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getAllByText("exact_match").length).toBe(2);
     expect(screen.getByText("left_only")).toBeTruthy();
     expect(screen.getByText("right_only")).toBeTruthy();
@@ -202,8 +298,11 @@ describe("TraceComparison", () => {
   });
 
   it("keeps ambiguity and unavailable records visible under Changed only", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+    await screen.findAllByText("Investigation starting point");
+    fireEvent.click(screen.getByRole("button", { name: "View detailed comparison" }));
     await screen.findByText("Trace-level differences");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Changed only" }));
@@ -238,18 +337,106 @@ describe("TraceComparison", () => {
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("internal details", { status: 413 })));
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
-    expect(await screen.findByText("This comparison is too large to display. Choose smaller traces.")).toBeTruthy();
+    expect(await screen.findByText("This comparison exceeds TraceMotive's supported analysis/response limit.")).toBeTruthy();
   });
 
   it("handles an empty comparison and invalid request state", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(emptyComparisonResponse()));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(emptyInsightResponse()));
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
-    expect(await screen.findByText("No span comparison records were returned.")).toBeTruthy();
+    expect(await screen.findByText("No supported behavioral divergence found")).toBeTruthy();
     cleanup();
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid details", { status: 400 })));
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
     expect(await screen.findByText("The comparison request was invalid.")).toBeTruthy();
+  });
+
+  it("ignores a late insight response and error from an older comparison", async () => {
+    const { fetchMock, requests } = deferredFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+    expect(requests[0].url).toBe(insightComparisonUrl(leftId, rightId));
+
+    rerender(<TraceComparison leftTraceId={nextLeftId} rightTraceId={nextRightId} onBack={vi.fn()} />);
+    expect(requests[1].url).toBe(insightComparisonUrl(nextLeftId, nextRightId));
+    requests[1].resolve(insightResponseFor(nextLeftId, nextRightId));
+    expect(await screen.findByText("Next baseline run")).toBeTruthy();
+
+    requests[0].reject(new Error("stale request failure"));
+    await waitFor(() => expect(screen.getByText("Next baseline run")).toBeTruthy());
+    expect(screen.queryByText("Unable to load the comparison.")).toBeNull();
+  });
+
+  it("keeps the final comparison through rapid navigation", async () => {
+    const { fetchMock, requests } = deferredFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+    rerender(<TraceComparison leftTraceId={middleLeftId} rightTraceId={middleRightId} onBack={vi.fn()} />);
+    rerender(<TraceComparison leftTraceId={nextLeftId} rightTraceId={nextRightId} onBack={vi.fn()} />);
+    expect(requests).toHaveLength(3);
+
+    requests[2].resolve(insightResponseFor(nextLeftId, nextRightId));
+    expect(await screen.findByText("Next baseline run")).toBeTruthy();
+    requests[1].resolve(insightResponseFor(middleLeftId, middleRightId));
+    requests[0].resolve(insightResponse());
+    await waitFor(() => expect(screen.getByText("Next baseline run")).toBeTruthy());
+    expect(screen.queryByText("Baseline run")).toBeNull();
+  });
+
+  it("does not let a stale v0.2 detail response replace a newer insight view", async () => {
+    const { fetchMock, requests } = deferredFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+
+    requests[0].resolve(insightResponse());
+    expect(await screen.findByText("Baseline run")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View detailed comparison" }));
+    expect(requests[1].url).toBe(comparisonUrl(leftId, rightId));
+
+    rerender(<TraceComparison leftTraceId={nextLeftId} rightTraceId={nextRightId} onBack={vi.fn()} />);
+    requests[2].resolve(insightResponseFor(nextLeftId, nextRightId));
+    expect(await screen.findByText("Next baseline run")).toBeTruthy();
+
+    requests[1].resolve(comparisonResponse());
+    await waitFor(() => expect(screen.queryByText("Trace-level differences")).toBeNull());
+    expect(screen.getByText("Next baseline run")).toBeTruthy();
+  });
+
+  it("rejects malformed v0.3 references without rendering raw payload details", async () => {
+    const payload = insightPayload() as any;
+    payload.investigation.starting_point.finding_id = "missing-finding";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })));
+
+    render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Unable to load the comparison.")).toBeTruthy();
+    expect(screen.queryByText("missing-finding")).toBeNull();
+  });
+
+  it("rejects behavioral findings presented as context", async () => {
+    const payload = insightPayload() as any;
+    payload.investigation.context_finding_ids = ["finding-0001"];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })));
+
+    render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Unable to load the comparison.")).toBeTruthy();
+  });
+
+  it("rejects unknown finding types, duplicate IDs, and missing context references", async () => {
+    const mutations = [
+      (payload: any) => { payload.findings[0].type = "future_finding_type"; },
+      (payload: any) => { payload.findings.push({ ...payload.findings[0] }); payload.summary.finding_count = 2; },
+      (payload: any) => { payload.investigation.context_finding_ids = ["missing-context-finding"]; },
+    ];
+    for (const mutate of mutations) {
+      cleanup();
+      const payload = insightPayload() as any;
+      mutate(payload);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })));
+      render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
+      expect(await screen.findByText("Unable to load the comparison.")).toBeTruthy();
+    }
   });
 });
 
@@ -271,7 +458,7 @@ describe("trace comparison selection", () => {
 
   it("navigates from the existing list into the comparison route", async () => {
     window.history.replaceState({}, "", "#/");
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url.startsWith("/api/v1/") ? traceListResponse() : comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url.startsWith("/api/v1/") ? traceListResponse() : url.startsWith("/api/v3/") ? insightResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
     render(<TraceMotiveApp />);
 
@@ -280,7 +467,7 @@ describe("trace comparison selection", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Use as right" })[1]);
     fireEvent.click(screen.getByRole("button", { name: "Compare selected traces" }));
     expect(window.location.hash).toBe(comparisonRoute(leftId, rightId));
-    expect(await screen.findByText("Trace-level differences")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith(comparisonUrl(leftId, rightId), expect.objectContaining({ method: "GET" }));
+    expect((await screen.findAllByText("Investigation starting point")).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith(insightComparisonUrl(leftId, rightId), expect.objectContaining({ method: "GET" }));
   });
 });
