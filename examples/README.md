@@ -20,7 +20,7 @@ python -m pip install -e ".[server,openai-agents]"
 The supported `openai-agents` range is `>=0.17,<0.18`. The Python import name
 and distribution name are both `tracemotive`.
 
-For the packaged v0.2 local experience, use `tracemotive serve` from one
+For the packaged v0.3 local experience, use `tracemotive serve` from one
 terminal. It binds to `127.0.0.1:8765`, serves the packaged UI, and uses
 persistent local SQLite by default. The direct Uvicorn command below remains a
 development and v0.1 compatibility path.

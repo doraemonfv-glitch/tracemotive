@@ -1,15 +1,18 @@
 # TraceMotive
 
-TraceMotive v0.2 is a local-first tracing and debugging tool for AI agent
+TraceMotive v0.3 is a local-first tracing and debugging tool for AI agent
 execution. It records sanitized Canonical traces and spans, keeps them in a
-persistent local SQLite Collector, and serves a packaged UI for inspecting and
-comparing two observed runs.
+persistent local SQLite Collector, and helps compare two observed runs by
+showing the first evidence-supported behavioral divergence and a safe place to
+begin investigating.
 
 ![TraceMotive demo](https://raw.githubusercontent.com/doraemonfv-glitch/tracemotive/main/docs/assets/tracemotive-demo.gif)
 
 The long-term vision describes TraceMotive as “the causal debugger for AI
-agents”. The current v0.2 product provides structural observed differences,
-not automatic RCA, causal proof, first divergence, replay, cloud sync,
+agents”. The current v0.3 product provides evidence-supported behavioral
+divergence, deterministic findings, an investigation summary, and the
+existing v0.2 structural detail view. It does not provide automatic RCA,
+causal proof, replay, cloud sync,
 authentication, remote collectors, or additional framework adapters. See [the
 long-term vision](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/long-term-vision.md)
 for non-normative future context.
@@ -18,7 +21,7 @@ for non-normative future context.
 
 The Python distribution and import package are both `tracemotive`. Releases
 are distributed on PyPI as `tracemotive`. This checkout declares package
-version `0.2.0`. After publication, normal users can install the released
+version `0.3.0`. After publication, normal users can install the released
 package from PyPI as described below. The fresh-checkout instructions later in
 this README are for contributors and local development.
 

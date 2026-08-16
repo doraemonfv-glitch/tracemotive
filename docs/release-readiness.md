@@ -1,13 +1,15 @@
-# TraceMotive v0.2.0 release readiness
+# TraceMotive v0.3.0 Core release readiness
 
 This checklist is local-only. These commands build and inspect artifacts; they
 do not upload, publish, create a release, push a tag, or create a GitHub
 Release.
 
 The Python distribution and import package are both `tracemotive`, with
-package version `0.2.0`. The Canonical schema remains `0.1`, the ingest
-protocol remains `1`, and the comparison response uses version `0.2` under
-`/api/v2`.
+package version `0.3.0`. The Canonical schema remains `0.1`, the ingest
+protocol remains `1`, `/api/v2` retains comparison version `0.2`, and the
+additive Core insight response uses version `0.3` under `/api/v3`. LangGraph
+validation and broader workload characterization remain conditional P1 and do
+not block the Core release.
 
 The declared runtime and optional dependencies are:
 
