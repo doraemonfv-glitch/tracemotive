@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PUBLISH to authorize the PyPI publish job
+        required: true
+        type: string
+
+# This workflow is intentionally manual-only. Dispatch it from the exact
+# release commit or tag after the version and release decision are complete.
+permissions: {}
+
+jobs:
+  build:
+    name: Build and validate distributions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out release ref
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Bootstrap repository
+        run: python scripts/bootstrap.py
+
+      - name: Install validation and packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "setuptools>=77,<84" wheel build
+          python -m pip install -r requirements.txt
+
+      - name: Run Python regression and release gates
+        run: python -m unittest discover -s tests -v
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Run frontend production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build distributions
+        run: python -m build --sdist --wheel --no-isolation
+
+      - name: Validate distributions before upload
+        run: |
+          python - <<'PY'
+          from email.parser import Parser
+          from pathlib import Path
+          import tarfile
+          import zipfile
+
+          expected_urls = {
+              "Repository, https://github.com/doraemonfv-glitch/tracemotive",
+              "Issues, https://github.com/doraemonfv-glitch/tracemotive/issues",
+              "Security, https://github.com/doraemonfv-glitch/tracemotive/security",
+          }
+          wheels = sorted(Path("dist").glob("tracemotive-*.whl"))
+          sdists = sorted(Path("dist").glob("tracemotive-*.tar.gz"))
+          assert len(wheels) == 1, wheels
+          assert len(sdists) == 1, sdists
+
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = set(archive.namelist())
+              metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+              metadata = Parser().parsestr(archive.read(metadata_name).decode("utf-8"))
+              assert metadata["Name"] == "tracemotive"
+              assert set(metadata.get_all("Project-URL") or ()) == expected_urls
+              assert "tracemotive/ui/index.html" in names
+              assert any(name.startswith("tracemotive/ui/assets/") for name in names)
+
+          with tarfile.open(sdists[0]) as archive:
+              names = set(archive.getnames())
+              metadata_name = next(name for name in names if name.endswith("/PKG-INFO"))
+              metadata = Parser().parsestr(archive.extractfile(metadata_name).read().decode("utf-8"))
+              root = next(name.split("/", 1)[0] for name in names if name.endswith("/PKG-INFO"))
+              assert metadata["Name"] == "tracemotive"
+              assert set(metadata.get_all("Project-URL") or ()) == expected_urls
+              assert f"{root}/tracemotive/ui/index.html" in names
+              assert any(name.startswith(f"{root}/tracemotive/ui/assets/") for name in names)
+          PY
+
+      - name: Upload validated distributions for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish validated distributions to PyPI
+    if: ${{ needs.build.result == 'success' && inputs.confirm == 'PUBLISH' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: build
+    runs-on: ubuntu-latest
+    # Configure this exact environment and publisher on PyPI before dispatch.
+    # Project: tracemotive; owner: doraemonfv-glitch; repository: tracemotive.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tracemotive
+    permissions:
+      actions: read
+      id-token: write
+    steps:
+      - name: Download validated distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist
+
+      - name: Confirm downloaded distributions
+        run: |
+          test -f dist/*.whl
+          test -f dist/*.tar.gz
+
+      # PyPI Trusted Publishing exchanges this job's short-lived OIDC identity.
+      # No API token, username, password, or repository secret is used.
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
