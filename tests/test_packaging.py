@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -17,6 +18,216 @@ from email.parser import Parser
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _extract_tracked_checkout(destination: Path) -> None:
+    """Materialize only HEAD-tracked files into a clean checkout directory."""
+
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("fresh-checkout packaging gate requires git on PATH")
+
+    archive = destination.parent / "tracked-source.tar"
+    result = subprocess.run(
+        [git, "archive", "--format=tar", "--output", str(archive), "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git archive failed:\n{result.stdout}\n{result.stderr}")
+
+    destination.mkdir(parents=True, exist_ok=True)
+    destination_root = destination.resolve()
+    with tarfile.open(archive) as source:
+        for member in source.getmembers():
+            if member.issym() or member.islnk():
+                raise RuntimeError(f"tracked archive contains an unsupported link: {member.name}")
+            target = (destination / member.name).resolve()
+            if not target.is_relative_to(destination_root):
+                raise RuntimeError(f"tracked archive member escapes checkout: {member.name}")
+        if sys.version_info >= (3, 12):
+            source.extractall(destination, filter="data")
+        else:
+            source.extractall(destination)
+
+
+def _ui_manifest(ui_root: Path) -> dict[str, str]:
+    """Return deterministic hashes for generated package UI files."""
+
+    generated = [ui_root / "index.html"]
+    assets = ui_root / "assets"
+    generated.extend(sorted(path for path in assets.rglob("*") if path.is_file()))
+    if not (ui_root / "index.html").is_file() or not assets.is_dir() or not generated[1:]:
+        raise RuntimeError(f"packaged UI manifest is incomplete: {ui_root}")
+    return {
+        path.relative_to(ui_root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in generated
+    }
+
+
+def _run_fresh_checkout_serve_smoke(source_copy: Path) -> None:
+    """Load the prepared package UI through the source checkout's serve process."""
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    script = textwrap.dedent(
+        f"""
+        from tracemotive.cli import main
+
+        raise SystemExit(main(["serve", "--db", ":memory:", "--port", "{port}"]))
+        """
+    )
+    server = subprocess.Popen(
+        [sys.executable, "-c", script],
+        cwd=source_copy,
+        env=_clean_subprocess_environment(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    endpoint = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.monotonic() + 15
+        while True:
+            if server.poll() is not None:
+                raise RuntimeError(
+                    "fresh-checkout serve smoke exited:\n"
+                    f"{server.stdout.read() if server.stdout else ''}\n"
+                    f"{server.stderr.read() if server.stderr else ''}"
+                )
+            try:
+                with urllib.request.urlopen(endpoint + "/api/v1/health", timeout=1) as response:
+                    if response.status != 200 or response.read() != b'{"status":"ok"}':
+                        raise RuntimeError("fresh-checkout health response was invalid")
+                break
+            except (OSError, urllib.error.URLError):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("fresh-checkout serve smoke did not become ready")
+                time.sleep(0.1)
+
+        with urllib.request.urlopen(endpoint + "/", timeout=2) as response:
+            index = response.read()
+            if response.status != 200 or b'<div id="root">' not in index:
+                raise RuntimeError("fresh-checkout packaged UI index was invalid")
+        match = re.search(rb'/(assets/[^"\']+)', index)
+        if match is None:
+            raise RuntimeError("fresh-checkout packaged UI did not reference an asset")
+        with urllib.request.urlopen(endpoint + "/" + match.group(1).decode("ascii"), timeout=2) as response:
+            if response.status != 200 or not response.read():
+                raise RuntimeError("fresh-checkout packaged UI asset was invalid")
+    finally:
+        if server.poll() is None:
+            server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=5)
+        if server.stdout is not None:
+            server.stdout.close()
+        if server.stderr is not None:
+            server.stderr.close()
+
+
+def _installed_persistence_script(port: int) -> str:
+    return textwrap.dedent(
+        """
+        import json
+        import os
+        import pathlib
+        import subprocess
+        import sys
+        import time
+        import urllib.request
+
+        port = PORT_PLACEHOLDER
+        endpoint = "http://127.0.0.1:%d" % port
+        database = pathlib.Path.cwd() / "v04-02-persistence.sqlite3"
+        executable = pathlib.Path(sys.executable).with_name(
+            "tracemotive.exe" if os.name == "nt" else "tracemotive"
+        )
+
+        def request(path):
+            with urllib.request.urlopen(endpoint + path, timeout=2) as response:
+                return response.status, response.read()
+
+        def start_server():
+            process = subprocess.Popen(
+                [str(executable), "serve", "--db", str(database), "--port", str(port)],
+                cwd=pathlib.Path.cwd(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            deadline = time.monotonic() + 15
+            while True:
+                if process.poll() is not None:
+                    raise AssertionError(process.stderr.read())
+                try:
+                    status, body = request("/api/v1/health")
+                    if status == 200 and body == b'{"status":"ok"}':
+                        return process
+                except Exception:
+                    if time.monotonic() >= deadline:
+                        raise AssertionError("installed persistence server did not become ready")
+                time.sleep(0.1)
+
+        def stop_server(process):
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+        server = start_server()
+        try:
+            import tracemotive
+
+            tracemotive.configure(enabled=True, endpoint=endpoint, capture_content=False)
+            with tracemotive.trace("v04-02-left"):
+                with tracemotive.span("left-step"):
+                    pass
+            with tracemotive.trace("v04-02-right"):
+                with tracemotive.span("right-step"):
+                    pass
+            assert tracemotive.flush(5)
+
+            status, body = request("/api/v1/traces?limit=100&offset=0")
+            assert status == 200
+            traces = {item["name"]: item["trace_id"] for item in json.loads(body)["items"]}
+            left_id = traces["v04-02-left"]
+            right_id = traces["v04-02-right"]
+            compare_path = "/api/v2/compare/%s/%s" % (left_id, right_id)
+            status, comparison = request(compare_path)
+            assert status == 200
+            assert json.loads(comparison)["comparison_version"] == "0.2"
+        finally:
+            stop_server(server)
+
+        restarted = start_server()
+        try:
+            status, body = request("/api/v1/traces?limit=100&offset=0")
+            assert status == 200
+            persisted = {item["trace_id"] for item in json.loads(body)["items"]}
+            assert {left_id, right_id}.issubset(persisted)
+            status, restarted_comparison = request(compare_path)
+            assert status == 200
+            assert restarted_comparison == comparison
+        finally:
+            stop_server(restarted)
+        """
+    ).replace("PORT_PLACEHOLDER", str(port))
 
 
 class PackagingOnboardingTests(unittest.TestCase):
@@ -125,26 +336,40 @@ def _clean_subprocess_environment() -> dict[str, str]:
 
 
 class BuiltArtifactPackagingTests(unittest.TestCase):
-    """Build and exercise the actual local artifacts without source leakage."""
+    """Build and exercise artifacts from a tracked-only checkout."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory(prefix="tracemotive-issue16-packaging-")
+        cls._temporary = tempfile.TemporaryDirectory(prefix="tracemotive v04-02 packaging ")
         temporary_root = Path(cls._temporary.name)
         cls._source_copy = temporary_root / "source"
-        shutil.copytree(
-            ROOT,
-            cls._source_copy,
-            ignore=shutil.ignore_patterns(
-                ".git",
-                ".pytest_cache",
-                "__pycache__",
-                "*.egg-info",
-                "node_modules",
-                "build",
-                "dist",
-            ),
+        _extract_tracked_checkout(cls._source_copy)
+        cls._fresh_checkout_initial_ui_absent = not (
+            (cls._source_copy / "frontend" / "dist").exists()
+            or (cls._source_copy / "tracemotive" / "ui" / "index.html").exists()
         )
+        if not cls._fresh_checkout_initial_ui_absent:
+            raise RuntimeError("tracked-only checkout unexpectedly contains generated UI assets")
+
+        bootstrap = subprocess.run(
+            [sys.executable, "scripts/bootstrap.py"],
+            cwd=cls._source_copy,
+            env=_clean_subprocess_environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if bootstrap.returncode != 0:
+            raise RuntimeError(f"fresh-checkout bootstrap failed:\n{bootstrap.stdout}\n{bootstrap.stderr}")
+        cls._fresh_checkout_bootstrap_output = bootstrap.stdout
+        cls._fresh_checkout_ui_manifest = _ui_manifest(cls._source_copy / "tracemotive" / "ui")
+        cls._fresh_checkout_dist_present = (cls._source_copy / "frontend" / "dist").is_dir()
+        if not cls._fresh_checkout_dist_present:
+            raise RuntimeError("fresh-checkout bootstrap did not produce frontend/dist")
+        _run_fresh_checkout_serve_smoke(cls._source_copy)
+
         cls._artifact_dir = temporary_root / "artifacts"
         cls._artifact_dir.mkdir()
         build = subprocess.run(
@@ -162,6 +387,8 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             env=_clean_subprocess_environment(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if build.returncode != 0:
@@ -181,10 +408,13 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
                 sys.executable,
                 "-m",
                 "venv",
+                "--system-site-packages",
                 str(cls._venv),
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if venv.returncode != 0:
@@ -193,42 +423,68 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             Path("Scripts") / "python.exe" if os.name == "nt" else Path("bin") / "python"
         )
         install = subprocess.run(
-            [str(cls._installed_python), "-m", "pip", "install", "--no-deps", str(cls._wheel)],
+            [
+                str(cls._installed_python),
+                "-m",
+                "pip",
+                "install",
+                "--no-deps",
+                f"{cls._wheel}[server]",
+            ],
             cwd=cls._run_root,
             env=_clean_subprocess_environment(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
         if install.returncode != 0:
             raise RuntimeError(f"wheel installation failed:\n{install.stdout}\n{install.stderr}")
-        server_install = subprocess.run(
-            [str(cls._installed_python), "-m", "pip", "install", f"{cls._wheel}[server]"],
+        dependencies = subprocess.run(
+            [str(cls._installed_python), "-c", "import fastapi, uvicorn"],
             cwd=cls._run_root,
             env=_clean_subprocess_environment(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
-        if server_install.returncode != 0:
+        if dependencies.returncode != 0:
             raise RuntimeError(
-                f"wheel server-extra installation failed:\n"
-                f"{server_install.stdout}\n{server_install.stderr}"
+                "installed-wheel smoke prerequisites are unavailable in the local "
+                f"environment:\n{dependencies.stdout}\n{dependencies.stderr}"
             )
+        shutil.rmtree(cls._source_copy)
+        cls._source_checkout_removed = not cls._source_copy.exists()
 
     @classmethod
     def tearDownClass(cls) -> None:
         cls._temporary.cleanup()
 
+    def _installed_environment(self) -> dict[str, str]:
+        environment = _clean_subprocess_environment()
+        environment["PATH"] = str(
+            self._venv / (Path("Scripts") if os.name == "nt" else Path("bin"))
+        )
+        return environment
+
     def _run_installed(self, script: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [str(self._installed_python), "-c", textwrap.dedent(script)],
             cwd=self._run_root,
-            env=_clean_subprocess_environment(),
+            env=self._installed_environment(),
             capture_output=True,
             text=True,
             check=False,
         )
+
+    def test_tracked_checkout_bootstrap_and_source_serve_smoke_pass(self) -> None:
+        self.assertTrue(self._fresh_checkout_initial_ui_absent)
+        self.assertTrue(self._fresh_checkout_dist_present)
+        self.assertTrue(self._fresh_checkout_ui_manifest)
+        self.assertTrue(self._source_checkout_removed)
 
     def test_wheel_and_sdist_contents_and_metadata_are_final(self) -> None:
         legacy_processor_name = "AgentLens" + "OpenAI" + "Processor"
@@ -242,6 +498,17 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIn("tracemotive/ui/server.py", names)
             self.assertIn("tracemotive/ui/index.html", names)
             self.assertTrue(any(name.startswith("tracemotive/ui/assets/") for name in names))
+            wheel_ui_manifest = {
+                name.removeprefix("tracemotive/ui/"): hashlib.sha256(archive.read(name)).hexdigest()
+                for name in names
+                if name.startswith("tracemotive/ui/")
+                and name != "tracemotive/ui/__init__.py"
+                and (
+                    name == "tracemotive/ui/index.html"
+                    or name.startswith("tracemotive/ui/assets/")
+                )
+            }
+            self.assertEqual(wheel_ui_manifest, self._fresh_checkout_ui_manifest)
             self.assertFalse(any("node_modules" in name for name in names))
             self.assertFalse(any(name.startswith("frontend/") for name in names))
             license_name = "tracemotive-0.3.0.dist-info/licenses/LICENSE"
@@ -290,6 +557,19 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIn(f"{sdist_root}/tracemotive/ui/server.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/ui/index.html", names)
             self.assertTrue(any(name.startswith(f"{sdist_root}/tracemotive/ui/assets/") for name in names))
+            sdist_ui_manifest = {
+                name.removeprefix(f"{sdist_root}/tracemotive/ui/"): hashlib.sha256(
+                    archive.extractfile(name).read()
+                ).hexdigest()
+                for name in names
+                if name.startswith(f"{sdist_root}/tracemotive/ui/")
+                and name != f"{sdist_root}/tracemotive/ui/__init__.py"
+                and (
+                    name == f"{sdist_root}/tracemotive/ui/index.html"
+                    or name.startswith(f"{sdist_root}/tracemotive/ui/assets/")
+                )
+            }
+            self.assertEqual(sdist_ui_manifest, self._fresh_checkout_ui_manifest)
             self.assertFalse(any(name.startswith(f"{sdist_root}/agentlens/") for name in names))
             self.assertFalse(
                 any(
@@ -321,6 +601,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             f"""
             import importlib.util
             import pathlib
+            import shutil
             import site
             import sys
             import tracemotive
@@ -328,6 +609,10 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
 
             location = pathlib.Path(tracemotive.__file__).resolve()
             assert any(location.is_relative_to(pathlib.Path(root).resolve()) for root in site.getsitepackages())
+            assert shutil.which("node") is None
+            assert shutil.which("npm") is None
+            assert not pathlib.Path.cwd().joinpath("frontend").exists()
+            assert not pathlib.Path.cwd().joinpath("tracemotive").exists()
             assert importlib.util.find_spec("agentlens") is None
             assert callable(tracemotive.configure)
             assert callable(tracemotive.trace)
@@ -359,6 +644,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_installed_cli_serves_packaged_ui_without_checkout_or_node(self) -> None:
+        self.assertTrue(self._source_checkout_removed)
         executable = self._venv / (
             Path("Scripts") / "tracemotive.exe" if os.name == "nt" else Path("bin") / "tracemotive"
         )
@@ -419,6 +705,13 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             if server.stderr is not None:
                 server.stderr.close()
         self.assertIsNotNone(server.returncode)
+
+    def test_installed_persistence_and_v2_comparison_survive_restart(self) -> None:
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        result = self._run_installed(_installed_persistence_script(port))
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_installed_server_extra_runs_documented_uvicorn_factory(self) -> None:
         factory_target = "tracemotive.collector:create_app"
