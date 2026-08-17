@@ -53,6 +53,12 @@ def _parser() -> argparse.ArgumentParser:
     serve.set_defaults(handler=_run_serve)
     demo = commands.add_parser("demo", help="seed the deterministic local v0.3 demo")
     demo.add_argument(
+        "--scenario",
+        choices=("identified", "uncertain"),
+        default="identified",
+        help="deterministic local scenario (default: identified)",
+    )
+    demo.add_argument(
         "--endpoint",
         default=DEFAULT_DEMO_ENDPOINT,
         metavar="URL",
@@ -132,7 +138,7 @@ def _run_serve(arguments: argparse.Namespace) -> int:
 
 def _run_demo(arguments: argparse.Namespace) -> int:
     try:
-        result = seed_demo(arguments.endpoint)
+        result = seed_demo(arguments.endpoint, scenario=arguments.scenario)
     except DemoError as exc:
         print(f"tracemotive demo: {exc}", file=sys.stderr)
         return 1

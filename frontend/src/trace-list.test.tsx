@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { decodeTraceListResponse, TRACE_LIST_PATH } from "./api";
+import { EmptyStateOnboarding, ONBOARDING_COMMANDS } from "./onboarding";
 import { TraceList } from "./trace-list";
 import type { TraceListResponse, TraceSummary } from "./types";
 
@@ -97,15 +98,81 @@ describe("TraceList", () => {
     );
   });
 
-  it("shows the initial loading state and then the zero-trace empty state", async () => {
+  it("shows the first-run onboarding state with exact local commands and product limits", async () => {
     const first = deferred<Response>();
-    vi.stubGlobal("fetch", vi.fn().mockReturnValue(first.promise));
+    const fetchMock = vi.fn().mockReturnValue(first.promise);
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<TraceList />);
     expect(screen.getByText("Loading trace list...")).toBeTruthy();
 
     first.resolve(response(page([])));
-    expect(await screen.findByText("No traces recorded yet.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "See what changed in an AI agent run" })).toBeTruthy();
+    expect(screen.getByText("TraceMotive compares AI agent executions and identifies the first behavioral divergence supported by the available evidence.")).toBeTruthy();
+    expect(screen.getByText(/It does not claim that an observed divergence caused a failure/)).toBeTruthy();
+    expect(screen.getByText("tracemotive demo")).toBeTruthy();
+    expect(screen.getByText("tracemotive serve")).toBeTruthy();
+    expect(screen.getByText("tracemotive demo --scenario uncertain")).toBeTruthy();
+    expect(screen.getByText("python -m examples.openai_agents_example")).toBeTruthy();
+    expect(screen.getByText(/TraceMotive itself needs no API key/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(`${TRACE_LIST_PATH}?limit=50&offset=0`, expect.anything());
+  });
+
+  it("copies the deterministic demo command without executing or interpolating it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(page([]))));
+
+    render(<TraceList />);
+
+    await screen.findByText("tracemotive demo");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Run the identified example" }));
+    expect(writeText).toHaveBeenCalledWith("tracemotive demo");
+    expect(await screen.findByText("Copied.")).toBeTruthy();
+  });
+
+  it("keeps onboarding commands static when hostile trace text is present", () => {
+    const hostile = "<script>window.location='https://evil.invalid'</script>";
+    const { container } = render(<><span>{hostile}</span><EmptyStateOnboarding /></>);
+
+    expect(screen.getByText(ONBOARDING_COMMANDS.identifiedDemo)).toBeTruthy();
+    expect(screen.getByText(hostile)).toBeTruthy();
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.textContent).toContain(ONBOARDING_COMMANDS.identifiedDemo);
+  });
+
+  it("leaves a focused selectable command when clipboard access is denied", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(page([]))));
+
+    render(<TraceList />);
+
+    await screen.findByText("tracemotive demo");
+    fireEvent.click(screen.getByRole("button", { name: "Copy Run the identified example" }));
+    expect(await screen.findByText("Clipboard unavailable. Select the command above.")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText("Run the identified example command"));
+  });
+
+  it("transitions from onboarding to the normal trace UI without inventing a comparison", async () => {
+    const empty = deferred<Response>();
+    const filtered = deferred<Response>();
+    const fetchMock = vi.fn((request: string) => request.includes("status=error") ? filtered.promise : empty.promise);
+    const onStartComparison = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TraceList onStartComparison={onStartComparison} />);
+    empty.resolve(response(page([])));
+    expect(await screen.findByText("tracemotive demo")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Status filter" }), { target: { value: "error" } });
+    filtered.resolve(response(page([gamma], 0n, 1n)));
+    expect(await screen.findByText("Gamma workflow")).toBeTruthy();
+    expect(screen.queryByText("tracemotive demo")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Compare selected traces" }));
+    expect(onStartComparison).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Compare selected traces" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("uses a controlled error message without exposing the response body", async () => {

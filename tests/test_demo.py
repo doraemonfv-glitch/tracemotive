@@ -18,9 +18,11 @@ from tracemotive.demo import (
     DemoError,
     _validated_endpoint,
     _validate_demo_comparison,
+    _validate_uncertain_demo_comparison,
     format_demo_result,
     seed_demo,
 )
+from tracemotive.cli import _parser
 
 
 _TRACE_ID = re.compile(r"[0-9a-f]{32}")
@@ -93,6 +95,10 @@ class DemoTests(unittest.TestCase):
         with self.assertRaisesRegex(DemoError, "loopback URL"):
             seed_demo("http://example.com:8765")
 
+    def test_cli_exposes_default_and_uncertain_onboarding_scenarios(self) -> None:
+        self.assertEqual(_parser().parse_args(["demo"]).scenario, "identified")
+        self.assertEqual(_parser().parse_args(["demo", "--scenario", "uncertain"]).scenario, "uncertain")
+
     def test_endpoint_validation_rejects_credentials_remote_hosts_and_invalid_ports(self) -> None:
         for endpoint in (
             "http://user@127.0.0.1:8765",
@@ -135,6 +141,27 @@ class DemoTests(unittest.TestCase):
                     "b" * 32,
                 )
 
+    def test_uncertain_result_validation_rejects_a_different_response_pair(self) -> None:
+        fake = Mock()
+        fake.getresponse.return_value.status = 200
+        fake.getresponse.return_value.read.return_value = json.dumps(
+            {
+                "comparison_version": "0.3",
+                "left_trace": {"trace_id": "c" * 32},
+                "right_trace": {"trace_id": "d" * 32},
+                "investigation": {"state": "uncertain", "starting_point": None},
+                "uncertainties": [{"reason_code": "repeated_sibling_ambiguity"}],
+            }
+        ).encode("utf-8")
+        with patch("tracemotive.demo.http.client.HTTPConnection", return_value=fake):
+            with self.assertRaisesRegex(DemoError, "expected seeded pair"):
+                _validate_uncertain_demo_comparison(
+                    "127.0.0.1",
+                    8765,
+                    "a" * 32,
+                    "b" * 32,
+                )
+
     def test_seeded_pair_has_expected_v03_semantics_and_deep_link(self) -> None:
         result = seed_demo(self.endpoint)
         self.assertRegex(result.reference_trace_id, _TRACE_ID)
@@ -169,6 +196,157 @@ class DemoTests(unittest.TestCase):
         )
         detail = _json_get(self.endpoint, payload["detail_endpoint"]["path"])
         self.assertEqual(detail["comparison_version"], "0.2")
+
+        v4 = _json_get(
+            self.endpoint,
+            f"/api/v4/compare/{result.reference_trace_id}/{result.changed_trace_id}",
+        )
+        self.assertEqual(v4["comparison_version"], "0.4")
+        self.assertEqual(v4["left"]["trace_id"], result.reference_trace_id)
+        self.assertEqual(v4["right"]["trace_id"], result.changed_trace_id)
+        self.assertEqual(v4["summary"]["investigation_state"], "identified")
+        self.assertEqual(v4["investigation"]["primary_finding_id"], primary_id)
+        v4_primary = next(item for item in v4["findings"] if item["id"] == primary_id)
+        self.assertTrue(v4_primary["structured_diff_available"])
+        self.assertIsNone(v4_primary["structured_diff_reason"])
+        self.assertTrue(v4_primary["structured_diff"])
+        self.assertTrue(
+            all(
+                item["op"] in {"add", "remove", "replace"}
+                and isinstance(item["path"], str)
+                and item["path"].startswith("/")
+                for item in v4_primary["structured_diff"]
+            )
+        )
+
+    def test_uncertain_scenario_preserves_repeated_member_ambiguity(self) -> None:
+        result = seed_demo(self.endpoint, scenario="uncertain")
+        self.assertEqual(result.scenario, "uncertain")
+        payload = _json_get(
+            self.endpoint,
+            f"/api/v3/compare/{result.reference_trace_id}/{result.changed_trace_id}",
+        )
+        self.assertEqual(payload["investigation"]["state"], "uncertain")
+        self.assertIsNone(payload["investigation"]["starting_point"])
+        self.assertIn(
+            "repeated_sibling_ambiguity",
+            {item["reason_code"] for item in payload["uncertainties"]},
+        )
+        self.assertIn("ambiguity barrier", format_demo_result(result))
+
+        v4 = _json_get(
+            self.endpoint,
+            f"/api/v4/compare/{result.reference_trace_id}/{result.changed_trace_id}",
+        )
+        self.assertEqual(v4["comparison_version"], "0.4")
+        self.assertEqual(v4["left"]["trace_id"], result.reference_trace_id)
+        self.assertEqual(v4["right"]["trace_id"], result.changed_trace_id)
+        self.assertEqual(v4["summary"]["investigation_state"], "uncertain")
+        self.assertIsNone(v4["investigation"]["primary_finding_id"])
+        self.assertTrue(
+            all(item.get("structured_diff_available") is not True for item in v4["findings"])
+        )
+        self.assertEqual(
+            {item["type"] for item in v4["investigation"]["actions"]},
+            {"full_comparison", "copy_local_reference"},
+        )
+        self.assertIn(
+            "repeated_sibling_ambiguity",
+            {item["reason_code"] for item in v4["uncertainties"]},
+        )
+
+    def test_uncertain_scenario_is_repeatable_across_fresh_processes(self) -> None:
+        semantics = []
+        repository_root = Path(__file__).resolve().parents[1]
+        seed_script = (
+            "import json, sys; "
+            "from tracemotive.demo import seed_demo; "
+            "result = seed_demo(sys.argv[1], scenario='uncertain'); "
+            "print(json.dumps({'reference': result.reference_trace_id, 'changed': result.changed_trace_id}))"
+        )
+        for _ in range(2):
+            with tempfile.TemporaryDirectory() as directory:
+                port = _free_port()
+                endpoint = f"http://127.0.0.1:{port}"
+                database = Path(directory) / "demo.sqlite3"
+                server = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        "from tracemotive.cli import main; raise SystemExit(main())",
+                        "serve",
+                        "--db",
+                        str(database),
+                        "--port",
+                        str(port),
+                    ],
+                    cwd=repository_root,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                try:
+                    deadline = time.monotonic() + 15
+                    while time.monotonic() < deadline and not _health(endpoint):
+                        if server.poll() is not None:
+                            self.fail("fresh demo test server exited before becoming ready")
+                        time.sleep(0.05)
+                    self.assertTrue(_health(endpoint), "fresh demo test server did not become ready")
+
+                    completed = subprocess.run(
+                        [sys.executable, "-c", seed_script, endpoint],
+                        cwd=repository_root,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    identifiers = json.loads(completed.stdout)
+                    v3 = _json_get(
+                        endpoint,
+                        f"/api/v3/compare/{identifiers['reference']}/{identifiers['changed']}",
+                    )
+                    v4 = _json_get(
+                        endpoint,
+                        f"/api/v4/compare/{identifiers['reference']}/{identifiers['changed']}",
+                    )
+                    self.assertEqual(v3["left_trace"]["trace_id"], identifiers["reference"])
+                    self.assertEqual(v3["right_trace"]["trace_id"], identifiers["changed"])
+                    self.assertEqual(v4["left"]["trace_id"], identifiers["reference"])
+                    self.assertEqual(v4["right"]["trace_id"], identifiers["changed"])
+                    self.assertEqual(v3["investigation"]["state"], "uncertain")
+                    self.assertIsNone(v3["investigation"]["starting_point"])
+                    self.assertEqual(v4["summary"]["investigation_state"], "uncertain")
+                    self.assertIsNone(v4["investigation"]["primary_finding_id"])
+                    self.assertEqual(v4["findings"], [])
+                    self.assertEqual(
+                        {item["reason_code"] for item in v3["uncertainties"]},
+                        {"repeated_sibling_ambiguity"},
+                    )
+                    self.assertEqual(
+                        {item["reason_code"] for item in v4["uncertainties"]},
+                        {"repeated_sibling_ambiguity"},
+                    )
+                    semantics.append(
+                        (
+                            v3["investigation"]["state"],
+                            v3["investigation"]["starting_point"],
+                            tuple(sorted(item["reason_code"] for item in v3["uncertainties"])),
+                            v4["summary"]["investigation_state"],
+                            v4["investigation"]["primary_finding_id"],
+                            tuple(sorted(item["reason_code"] for item in v4["uncertainties"])),
+                            tuple(sorted(item["type"] for item in v4["investigation"]["actions"])),
+                        )
+                    )
+                finally:
+                    if server.poll() is None:
+                        server.terminate()
+                        try:
+                            server.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            server.kill()
+                            server.wait(timeout=10)
+        self.assertEqual(semantics[0], semantics[1])
 
     def test_repeated_seed_creates_new_pair_without_deleting_existing_traces(self) -> None:
         first = seed_demo(self.endpoint)
@@ -216,7 +394,17 @@ class DemoTests(unittest.TestCase):
         self.assertNotIn("openai", source.casefold())
         self.assertNotIn("anthropic", source.casefold())
         self.assertNotIn("requests", source.casefold())
+        self.assertNotIn("OPENAI_API_KEY", source)
+        self.assertNotIn("ANTHROPIC_API_KEY", source)
+        self.assertNotIn("os.environ", source)
         self.assertIn("validate_loopback_endpoint", source)
+
+    def test_hostile_endpoint_values_are_rejected_before_connection(self) -> None:
+        fake = Mock()
+        with patch("tracemotive.demo.http.client.HTTPConnection", return_value=fake):
+            with self.assertRaises(DemoError):
+                seed_demo("http://127.0.0.1:8765/<script>alert(1)</script>")
+        fake.assert_not_called()
 
 
 if __name__ == "__main__":

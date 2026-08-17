@@ -88,6 +88,23 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
 .state-message p { margin: 0 0 14px; }
 .state-error { border-color: #e5a9ae; color: #84242d; }
 .empty-state { display: grid; gap: 8px; justify-items: center; }
+.onboarding-state { display: grid; gap: 16px; }
+.onboarding-primary, .onboarding-support { background: #ffffff; border: 1px solid #dce1ea; border-radius: 10px; min-width: 0; padding: 20px; }
+.onboarding-primary { border-left: 4px solid #2f7a58; }
+.onboarding-primary h2 { font-size: 1.45rem; letter-spacing: -0.025em; margin: 0; }
+.onboarding-primary > p { color: #3e485b; line-height: 1.55; margin: 9px 0 0; max-width: 820px; }
+.onboarding-primary .onboarding-limit { color: #566176; font-size: 0.86rem; }
+.onboarding-next-step { border-top: 1px solid #e3e7ee; font-size: 0.86rem; margin-top: 15px !important; padding-top: 13px; }
+.onboarding-support-grid { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.onboarding-support h3 { font-size: 1rem; margin: 0; }
+.onboarding-support > p { color: #566176; font-size: 0.82rem; line-height: 1.5; margin: 8px 0 0; }
+.onboarding-command { display: grid; gap: 7px; margin-top: 14px; min-width: 0; }
+.onboarding-command-label { color: #566176; font-size: 0.72rem; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+.onboarding-command-row { align-items: start; display: flex; gap: 8px; min-width: 0; }
+.onboarding-command-row pre { background: #f6f8fc; border: 1px solid #e0e5ee; border-radius: 6px; color: #24324d; flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; margin: 0; min-width: 0; overflow: auto; padding: 9px; user-select: text; white-space: pre-wrap; overflow-wrap: anywhere; }
+.onboarding-command-row pre:focus-visible { outline: 3px solid #4d7cfe; outline-offset: 2px; }
+.onboarding-copy-status { color: #17633a; font-size: 0.78rem; }
+.onboarding-muted { color: #7a8496 !important; font-size: 0.76rem !important; }
 
 .pagination { align-items: center; display: flex; gap: 12px; justify-content: flex-end; margin-top: 14px; }
 .pagination span { color: #566176; font-size: 0.84rem; min-width: 96px; text-align: center; }
@@ -374,6 +391,9 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
   .insight-finding-heading, .insight-detail-action { align-items: stretch; flex-direction: column; }
   .insight-detail-action .primary-button { width: 100%; }
   .insight-detail-list > div { grid-template-columns: minmax(105px, 0.35fr) minmax(0, 1fr); }
+  .onboarding-support-grid { grid-template-columns: minmax(0, 1fr); }
+  .onboarding-command-row { align-items: stretch; flex-direction: column; }
+  .onboarding-command-row .secondary-button { width: 100%; }
   .cockpit-target-grid, .cockpit-observation-grid { grid-template-columns: minmax(0, 1fr); }
   .cockpit-primary-actions .primary-button { width: 100%; }
 }

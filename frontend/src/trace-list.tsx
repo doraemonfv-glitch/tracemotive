@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchTraceList } from "./api";
+import { EmptyStateOnboarding } from "./onboarding";
 import type { TraceListFilters, TraceListResponse, TraceStatus, TraceSummary } from "./types";
 
 const PAGE_SIZE = 50;
@@ -282,12 +283,10 @@ function TraceResults({
   const canGoNext = offset + BigInt(items.length) < total;
 
   if (items.length === 0) {
-    const message =
-      total > 0n
-        ? "No traces are available on this page."
-        : filtersAreActive
-          ? "No traces match the current filters."
-          : "No traces recorded yet.";
+    if (total === 0n && !filtersAreActive) {
+      return <EmptyStateOnboarding />;
+    }
+    const message = total > 0n ? "No traces are available on this page." : "No traces match the current filters.";
     return (
       <section className="state-message empty-state" aria-live="polite">
         <p>{message}</p>

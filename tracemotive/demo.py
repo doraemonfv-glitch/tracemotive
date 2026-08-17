@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import http.client
 import json
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, urlsplit
 
 import tracemotive
@@ -14,6 +14,7 @@ from tracemotive.transport import validate_loopback_endpoint
 
 
 DEFAULT_DEMO_ENDPOINT = "http://127.0.0.1:8765"
+DemoScenario = Literal["identified", "uncertain"]
 DEMO_PRIMARY_COORDINATE = (
     {"type": "agent", "operation": "agent.run", "name": "Order status agent", "ordinal": 0},
     {"type": "tool", "operation": "tool.call", "name": "Lookup policy", "ordinal": 0},
@@ -29,6 +30,7 @@ class DemoResult:
     endpoint: str
     reference_trace_id: str
     changed_trace_id: str
+    scenario: DemoScenario = "identified"
 
     @property
     def reference_trace_url(self) -> str:
@@ -217,6 +219,51 @@ def _seed_trace(*, changed: bool) -> str:
         return exc.trace_id
 
 
+def _seed_uncertain_trace_once(*, changed: bool) -> str:
+    name = "Ambiguous lookup reference run" if not changed else "Ambiguous lookup changed run"
+    outputs = (
+        [{"item": "A", "status": "ready"}, {"item": "B", "status": "ready"}]
+        if not changed
+        else [{"item": "B", "status": "ready"}, {"item": "C", "status": "ready"}]
+    )
+    trace_id: str | None = None
+    with tracemotive.trace(
+        name,
+        metadata={"demo": "v0.4-uncertain", "scenario": "uncertain"},
+    ) as trace_value:
+        if trace_value is None:
+            raise DemoError("TraceMotive did not create the uncertain demo Trace")
+        trace_id = trace_value.trace_id
+        with tracemotive.span(
+            "Ambiguous lookup agent",
+            type="agent",
+            operation="agent.run",
+            details=AgentDetails("agent", "Ambiguous lookup agent", "demo-1"),
+            input={"request": "Find the current item statuses."},
+        ):
+            for index, output in enumerate(outputs, start=1):
+                with tracemotive.span(
+                    "Lookup item",
+                    type="tool",
+                    operation="tool.call",
+                    details=_tool_details("lookup_item", f"lookup-item-{index}"),
+                    input={"request": "Find the current item statuses."},
+                ) as lookup:
+                    lookup.set_output(output)
+    if trace_id is None:
+        raise DemoError("TraceMotive did not return an uncertain demo Trace ID")
+    return trace_id
+
+
+def _seed_uncertain_trace(*, changed: bool) -> str:
+    try:
+        return _seed_uncertain_trace_once(changed=changed)
+    except DemoError:
+        raise
+    except Exception as exc:
+        raise DemoError("TraceMotive could not complete the uncertain demo") from exc
+
+
 def _comparison_json(
     hostname: str,
     port: int,
@@ -311,28 +358,68 @@ def _validate_demo_comparison(
         )
 
 
-def seed_demo(endpoint: str = DEFAULT_DEMO_ENDPOINT) -> DemoResult:
+def _validate_uncertain_demo_comparison(
+    hostname: str,
+    port: int,
+    reference_trace_id: str,
+    changed_trace_id: str,
+) -> None:
+    payload = _comparison_json(
+        hostname,
+        port,
+        reference_trace_id,
+        changed_trace_id,
+    )
+    investigation = payload.get("investigation")
+    left_trace = payload.get("left_trace")
+    right_trace = payload.get("right_trace")
+    valid = (
+        payload.get("comparison_version") == "0.3"
+        and isinstance(left_trace, dict)
+        and left_trace.get("trace_id") == reference_trace_id
+        and isinstance(right_trace, dict)
+        and right_trace.get("trace_id") == changed_trace_id
+        and isinstance(investigation, dict)
+        and investigation.get("state") == "uncertain"
+        and investigation.get("starting_point") is None
+        and any(
+            isinstance(item, dict)
+            and item.get("reason_code") == "repeated_sibling_ambiguity"
+            for item in payload.get("uncertainties", [])
+        )
+    )
+    if not valid:
+        raise DemoError(
+            "TraceMotive seeded the uncertain demo traces, but the local v0.3 "
+            "comparison did not preserve the expected seeded pair and ambiguity barrier"
+        )
+
+
+def seed_demo(
+    endpoint: str = DEFAULT_DEMO_ENDPOINT,
+    *,
+    scenario: DemoScenario = "identified",
+) -> DemoResult:
     """Check the existing server and seed one deterministic comparison pair."""
 
+    if scenario not in {"identified", "uncertain"}:
+        raise DemoError("scenario must be identified or uncertain")
     base, hostname, port = _validated_endpoint(endpoint)
     _check_server(base, hostname, port)
     try:
         tracemotive.configure(enabled=True, endpoint=base, capture_content=True)
-        reference_trace_id = _seed_trace(changed=False)
-        changed_trace_id = _seed_trace(changed=True)
+        seed_trace = _seed_trace if scenario == "identified" else _seed_uncertain_trace
+        reference_trace_id = seed_trace(changed=False)
+        changed_trace_id = seed_trace(changed=True)
         if not tracemotive.flush(timeout_seconds=5.0):
             raise DemoError("TraceMotive could not flush the demo events to the local server")
-        _validate_demo_comparison(
-            hostname,
-            port,
-            reference_trace_id,
-            changed_trace_id,
-        )
+        validate_comparison = _validate_demo_comparison if scenario == "identified" else _validate_uncertain_demo_comparison
+        validate_comparison(hostname, port, reference_trace_id, changed_trace_id)
     except DemoError:
         raise
     except Exception as exc:
         raise DemoError("TraceMotive could not seed the deterministic demo") from exc
-    return DemoResult(base, reference_trace_id, changed_trace_id)
+    return DemoResult(base, reference_trace_id, changed_trace_id, scenario)
 
 
 def format_demo_result(result: DemoResult) -> str:
@@ -348,8 +435,16 @@ def format_demo_result(result: DemoResult) -> str:
             f"Changed trace:   {result.changed_trace_url}",
             f"Open comparison: {result.comparison_url}",
             "",
-            "The comparison should show the first supported policy-output observation,",
-            "later observed evidence, and the uncertainty/context boundaries without a causal claim.",
+            (
+                "The comparison should show an ambiguity barrier rather than a guessed member match."
+                if result.scenario == "uncertain"
+                else "The comparison should show the first supported policy-output observation,"
+            ),
+            (
+                "The result remains an observed limitation, not a causal claim."
+                if result.scenario == "uncertain"
+                else "later observed evidence, and the uncertainty/context boundaries without a causal claim."
+            ),
             "Each demo invocation creates a fresh pair and leaves existing traces untouched.",
         )
     )
@@ -358,6 +453,7 @@ def format_demo_result(result: DemoResult) -> str:
 __all__ = [
     "DEFAULT_DEMO_ENDPOINT",
     "DEMO_PRIMARY_COORDINATE",
+    "DemoScenario",
     "DemoError",
     "DemoResult",
     "format_demo_result",
