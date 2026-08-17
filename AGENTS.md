@@ -10,7 +10,9 @@ TraceMotive
 
 ## Current target
 
-TraceMotive v0.1 observation Kernel
+TraceMotive v0.4 Core implementation. The Frozen v0.1 Specification remains
+the highest-authority compatibility contract, and `docs/v0.4/` is the frozen
+design for the additive current implementation scope.
 
 ## Authority precedence
 
@@ -63,7 +65,7 @@ UI
 - Known API keys and credentials must not be persisted.
 - TraceMotive must not include analytics or external telemetry.
 - The HTTP collector is loopback-only.
-- Never bind the documented v0.1 server to `0.0.0.0`.
+- Never bind the documented server to `0.0.0.0`.
 - Captured Agent content is untrusted.
 - The frontend never executes captured HTML or script.
 - Tracing failures must never fail Agent execution.

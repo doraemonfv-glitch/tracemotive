@@ -1,127 +1,161 @@
 # TraceMotive
 
-TraceMotive v0.3 is a local-first tracing and debugging tool for AI agent
-execution. It records sanitized Canonical traces and spans, keeps them in a
-persistent local SQLite Collector, and helps compare two observed runs by
-showing the first evidence-supported behavioral divergence and a safe place to
-begin investigating.
+When an AI agent succeeds once and fails once, the difficult question is often
+not “did the runs differ?” but “where is the first difference that the evidence
+actually supports investigating?”
 
-![TraceMotive demo](https://raw.githubusercontent.com/doraemonfv-glitch/tracemotive/main/docs/assets/tracemotive-demo.gif)
+TraceMotive compares AI agent executions and shows where their observed
+behavior first diverges with enough evidence to support an investigation
+starting point. It runs locally, keeps the Collector and SQLite data on the
+machine, and presents uncertainty when the evidence cannot support a narrower
+claim.
 
-The long-term vision describes TraceMotive as “the causal debugger for AI
-agents”. The current v0.3 product provides evidence-supported behavioral
-divergence, deterministic findings, an investigation summary, and the
-existing v0.2 structural detail view. It does not provide automatic RCA,
-causal proof, replay, cloud sync,
-authentication, remote collectors, or additional framework adapters. See [the
-long-term vision](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/long-term-vision.md)
-for non-normative future context.
+TraceMotive does **not** claim that an observed divergence caused a later
+failure. It does not provide automatic RCA, replay, cloud observability,
+authentication, remote collectors, or broad framework support.
 
-## Release and distribution status
+![TraceMotive demo](docs/assets/tracemotive-demo.gif)
 
-The Python distribution and import package are both `tracemotive`. Releases
-are distributed on PyPI as `tracemotive`. This checkout declares package
-version `0.3.0`. After publication, normal users can install the released
-package from PyPI as described below. The fresh-checkout instructions later in
-this README are for contributors and local development.
+## Try it locally in about three minutes
 
-The OpenAI Agents SDK range supported by this release is `>=0.17,<0.18`; that
-same range is declared in `pyproject.toml`.
+This is the normal installed-user path. It uses a deterministic local pair, so
+it needs no model provider, API key, Node.js, npm, cloud service, or external
+network request.
 
-## Install from PyPI
-
-For a normal installation of the released package:
+In the first terminal, install the server extra and start the loopback server:
 
 ```text
-pip install tracemotive
+python -m pip install "tracemotive[server]"
+tracemotive serve
 ```
 
-If you will run the local Collector, install the `server` extra:
+`tracemotive serve` binds to `127.0.0.1:8765` and serves the packaged UI and
+APIs. Keep this terminal running.
+
+In a second terminal, seed the stable identified example:
 
 ```text
-pip install "tracemotive[server]"
+tracemotive demo
 ```
 
-The OpenAI Agents SDK integration is optional. To use it, install the
-`openai-agents` extra:
+Open the printed comparison URL. In the comparison, use the compact workflow:
+
+- **Look here** — the first evidence-supported investigation starting point;
+- **What changed** — the best supported behavioral description;
+- **Evidence** — captured observations and their limitations;
+- **Next** — open the left span, right span, or full comparison; and
+- **What TraceMotive does not know** — the boundary between observation and
+  explanation.
+
+To see the uncertainty barrier for repeated members, run this in the second
+terminal instead:
 
 ```text
-pip install "tracemotive[openai-agents]"
+tracemotive demo --scenario uncertain
 ```
 
-To use both the Collector and the OpenAI Agents SDK integration, install both
-extras together:
+Each invocation creates a fresh pair and leaves existing traces in place. The
+default demo is identified; the uncertain demo keeps repeated members
+unpaired when the evidence cannot establish their identity.
+
+## What the comparison means
+
+TraceMotive reports observed evidence, not a diagnosis. A selected starting
+point means that the comparison found a supported place to begin investigating;
+it does not mean that TraceMotive knows the cause of a later failure.
+
+The structured diff is deliberately conservative. It compares object keys in a
+deterministic order and emits bounded `add`, `remove`, and `replace` records at
+JSON Pointer paths. Arrays do not receive inferred identity or move semantics;
+complex arrays may fall back to a whole-array replacement. If capture is
+unavailable or redaction prevents a safe comparison, TraceMotive does not
+invent a detailed diff.
+
+## Evaluation scope
+
+The public evaluation claim is limited to the current **V03-10 adversarial
+corpus**. In that 30-scenario corpus:
+
+- 30 scenarios are mandatory;
+- 15 have an expected confident meaningful-divergence answer;
+- 14 have an expected supported investigation starting point;
+- the false-confident meaningful-divergence target/result for a conforming
+  outcome set is 0; and
+- the false-confident investigation-starting-point target/result for a
+  conforming outcome set is 0.
+
+The corpus is intended to exercise ambiguity, incomplete traces,
+capture/redaction barriers, repeated tools, context-only changes, and
+structural divergence ordering. These are corpus-scoped oracle facts, not a
+universal accuracy guarantee, confidence percentage, causal claim, or
+independent benchmark.
+
+The reproducible oracle checks are:
 
 ```text
-pip install "tracemotive[server,openai-agents]"
+python -m unittest tests.test_divergence_evaluation -v
+python -m tests.divergence_evaluation
 ```
 
-## Requirements
+The full report is [the v0.3 divergence evaluation](docs/divergence-evaluation-v0.3.md).
 
-- Python 3.10 or newer. The package metadata declares `Requires-Python >=3.10`;
-  this checkout was locally validated with Python 3.12.
-- Node.js and npm are needed only for frontend development and release builds;
-  normal installed-wheel users do not need them.
-- An OpenAI API key is needed only for the real OpenAI Agents example, not for
-  the deterministic test suite or core SDK smoke.
+## Supported integration
 
-## Quick trial — deterministic v0.3 investigation demo
+The validated framework integration is the public OpenAI Agents SDK adapter.
+The tested support range is `openai-agents>=0.17,<0.18`, with compatibility
+checks at versions `0.17.0`, `0.17.4`, and `0.17.8` for the adapter callbacks,
+span-data fields, processor registration, model settings, and example
+construction surface.
 
-This is a short first-run path for evaluation. It uses the deterministic Python
-SDK trace below, so it does not require an OpenAI API key. The released wheel
-contains the production UI; Node.js/npm are not required.
+Install it separately when you want to instrument a real agent:
 
-1. In a fresh Python environment, install the server extra:
+```text
+python -m pip install "tracemotive[openai-agents]"
+```
 
-   ```text
-   python -m pip install "tracemotive[server]"
-   ```
+The actual-agent example requires the model provider's credentials. It is not
+needed for the local deterministic demo. With the Collector already running:
 
-2. Start the single-command local experience:
+```text
+python -m examples.openai_agents_example
+```
 
-   ```text
-   tracemotive serve
-   ```
+`local_only=True` makes TraceMotive the only OpenAI Agents tracing processor in
+that process. It controls framework tracing processors; it does not make model
+traffic local. A provider request may still leave the machine.
 
-   It binds only to `127.0.0.1:8765`, serves the packaged UI and APIs from the
-   same origin, and stores sanitized traces in the platform-safe persistent
-   database path. Use `tracemotive serve --db :memory:` only for an explicit
-   ephemeral session.
+LangGraph is not a validated integration in this checkout and is not part of
+the current support claim. It is conditional v0.4 design work only if its full
+public-runtime GO gate passes; otherwise it is deferred to v0.4.1. No other
+framework receives a support claim by analogy.
 
-3. In a second terminal, run the deterministic demo seed command:
+See the [OpenAI Agents integration notes](docs/openai-agents.md) and the
+[example README](examples/README.md) for the validated integration path.
 
-   ```text
-   tracemotive demo
-   ```
+## Install a released package
 
-   It creates a fresh reference/changed pair through the public SDK and local
-   Collector path. No model, API key, or external network request is made.
+The current distribution metadata remains `0.3.0`; the v0.4 implementation
+work is additive documentation and product work in this checkout, not a
+`0.4.0` release claim. For a normal installation:
 
-4. Open the printed comparison URL in a browser. The v0.3 investigation view
-   should show the first supported policy-output observation, later observed
-   evidence, and uncertainty/context boundaries without claiming causality.
-   The detailed v0.2 comparison remains available below the insight.
-   Each invocation creates a fresh pair; if a later seed step fails, any
-   already-persisted demo trace remains untouched and can be inspected or left
-   in place for a subsequent run.
-   [OpenAI Agents example](#openai-agents-sdk-integration-and-example) is the
-   alternative path if you want to try a real framework integration; it makes
-   a real model request and requires its documented extra and API key.
+```text
+python -m pip install tracemotive
+```
 
-5. Share what worked, what was unclear, and what you expected to see in a
-   [GitHub Issue](https://github.com/doraemonfv-glitch/tracemotive/issues).
-   Include your OS and Python/Node versions plus sanitized setup output, and
-   do not include API keys or other credentials. Use
-   [SECURITY.md](https://github.com/doraemonfv-glitch/tracemotive/blob/main/SECURITY.md)
-   for security-sensitive reports.
+For the local Collector and packaged UI:
 
-## Install from a fresh checkout
+```text
+python -m pip install "tracemotive[server]"
+```
 
-For contributors and local development, create and activate a virtual
-environment, install the Python development dependencies, then run the single
-repository bootstrap command. It installs the locked frontend dependencies,
-builds the production UI, and copies the generated package data into the local
-checkout. The generated UI remains disposable ignored output.
+Normal installed users do not install Node.js, run npm, or run the repository
+bootstrap script.
+
+## Contributor setup from a fresh checkout
+
+Contributor setup is separate from the installed-user path. Create and
+activate a virtual environment, install development dependencies, and then
+run the one canonical repository bootstrap command.
 
 PowerShell:
 
@@ -145,70 +179,29 @@ python -m pip install -e ".[server]"
 python scripts/bootstrap.py
 ```
 
-The canonical bootstrap command is:
+`python scripts/bootstrap.py` runs the locked frontend install and package
+build from the repository root. It writes only disposable ignored generated UI
+assets. The development frontend is optional:
 
 ```text
-python scripts/bootstrap.py
+cd frontend
+npm run dev
 ```
 
-It must be run from the repository root with the development virtual
-environment active. The core install contains FastAPI only as its third-party
-runtime dependency. The `server` extra adds Uvicorn. The optional
-`openai-agents` extra is not installed by the core path:
+The production UI is embedded in the Python package and served by
+`tracemotive serve`; Node.js is not a runtime requirement for installed users.
 
-```text
-python -m pip install -e ".[server,openai-agents]"
-```
-
-This is a development install from a repository checkout, distinct from the
-PyPI installation above.
-
-## Start the local server
-
-For normal use, start both the Collector and packaged production UI together:
-
-```text
-tracemotive serve
-```
-
-The server is loopback-only and has no configurable host. It always binds to
-`127.0.0.1`; remote, LAN, and `0.0.0.0` serving are not supported. Check that
-it is ready at `http://127.0.0.1:8765/api/v1/health`.
-
-`tracemotive serve` uses persistent SQLite by default. The path precedence is
-explicit `--db`, `TRACEMOTIVE_DB`, then the platform-safe default documented in
-the [release readiness checklist](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/release-readiness.md).
-Startup/path failures are explicit; the server never silently falls back to
-`:memory:` or another port.
-
-For development and v0.1 compatibility, the direct Uvicorn Collector factory
-remains available:
+For a maintainer-only direct Uvicorn factory check, the equivalent loopback
+command is:
 
 ```text
 python -m uvicorn tracemotive.collector:create_app --factory --host 127.0.0.1 --port 8765
 ```
 
-Programmatic `Repository()` and bare `create_app()` calls still default to
-SQLite `:memory:` for v0.1 compatibility.
+## Local SDK usage
 
-## Frontend development
-
-The frontend development server is for contributors and frontend work only:
-
-```text
-python scripts/bootstrap.py
-cd frontend
-npm run dev
-```
-
-Open `http://127.0.0.1:5173`. Vite proxies `/api` to the loopback Collector.
-The production UI is embedded in the Python wheel and served by
-`tracemotive serve`; normal users do not need this development workflow.
-
-## Minimal Python SDK usage
-
-TraceMotive and content capture are independently disabled by default. A minimal
-local trace is:
+TraceMotive and content capture are independently disabled by default. A
+minimal local trace is:
 
 ```python
 import tracemotive
@@ -226,91 +219,48 @@ with tracemotive.trace("demo"):
 tracemotive.flush()
 ```
 
-The stable Python SDK surface remains `configure`, `trace`, `span`, and `flush`.
+The stable SDK surface remains `configure`, `trace`, `span`, and `flush`.
 Tracing failures, an unavailable Collector, and queue overflow do not fail the
 instrumented Agent execution.
 
-## OpenAI Agents SDK integration and example
+## Privacy and security boundary
 
-For a PyPI installation, install the optional integration in the active
-environment:
-
-```text
-pip install "tracemotive[openai-agents]"
-```
-
-If the Collector is also being installed from PyPI, use
-`tracemotive[server,openai-agents]` instead.
-
-The supported range is `openai-agents>=0.17,<0.18`. Compatibility probes were
-run against versions 0.17.0, 0.17.4, and 0.17.8 for the tracing processor
-callbacks, span-data fields, processor registration functions,
-`ModelSettings.tool_choice`, and the example's `Agent` settings.
-
-Set `OPENAI_API_KEY` in the shell used to run the example. PowerShell and POSIX
-examples are:
-
-```powershell
-$env:OPENAI_API_KEY = "<your-key>"
-```
-
-```sh
-export OPENAI_API_KEY="<your-key>"
-```
-
-With the Collector already running, execute:
-
-```text
-python -m examples.openai_agents_example
-```
-
-The example uses `local_only=True`, which replaces the OpenAI Agents SDK
-global tracing processor list with TraceMotive. This controls framework tracing
-processors; it does not make model traffic local. OpenAI model requests may
-still leave the machine. With `local_only=False`, existing OpenAI or
-third-party processors remain active and may export framework traces
-remotely. See [the integration notes](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/openai-agents.md) and
-[the example README](https://github.com/doraemonfv-glitch/tracemotive/blob/main/examples/README.md).
-
-## Privacy and security
-
-- TraceMotive is disabled by default and has no analytics or external TraceMotive
-  telemetry. Its supported transport is the configured loopback Collector.
-- `capture_content=False` is the default even when TraceMotive is enabled. Turn
-  it on only when local content capture is intentional.
-- Model-provider traffic is separate from TraceMotive telemetry. For example,
-  the OpenAI example sends the model request to OpenAI.
-- Tracing and content capture are independent controls: enabling tracing does
-  not enable content capture.
-- A framework adapter converts framework data into TraceMotive's Canonical
-  representation. The shared v0.1 privacy boundary then normalizes and
-  sanitizes sensitive values before an event enters the transport queue.
-- The in-memory transport queue retains serialized Canonical event bytes only;
-  it does not retain raw framework objects or unsanitized source values.
-- The Collector persists only sanitized Canonical data in its configured local
-  SQLite database. SQLite journal/WAL/SHM sidecars may also exist. TraceMotive
-  does not provide local database encryption; protect the local data directory
-  with the operating system's access controls.
-- Redaction is part of this shared pre-transport boundary, not an independent
-  redaction policy that each framework adapter is expected to define. The
-  policy covers known/specified sensitive keys and recognizable credential
-  patterns; it does not guarantee detection of every possible secret.
+- TraceMotive is disabled by default and includes no analytics or external
+  TraceMotive telemetry.
+- Content capture is independently disabled by default.
+- The supported Collector transport is loopback-only.
+- Framework adapters convert data into Canonical values before the shared
+  privacy boundary redacts and sanitizes values before transport queue
+  ownership.
+- The Collector persists sanitized Canonical-derived data in local SQLite.
 - Captured runtime content is untrusted data. The frontend renders it as data
   and does not execute embedded HTML, script, or arbitrary code.
+- Tracing and sink failures remain isolated from the user's Agent execution.
+- Provider traffic, such as an OpenAI model request, is separate from
+  TraceMotive telemetry and may leave the machine.
 
-## Trace status and troubleshooting
+Do not treat these statements as a formal security audit. For sensitive
+reports, read [SECURITY.md](SECURITY.md) and use GitHub Private Vulnerability
+Reporting rather than a public issue.
 
-Trace status describes the observed top-level workflow outcome: `unset`, `ok`,
-or `error`. An error in a child Span does not automatically change the Trace
-status; the UI also reports Span error counts separately.
+## Compatibility and documentation layers
 
-If the example or SDK smoke reports that the Collector is unavailable, check
-the health URL, confirm the Collector terminal is still running on
-`127.0.0.1:8765`, and ensure the frontend is using `127.0.0.1:5173`. The SDK
-keeps Agent execution non-fatal when local telemetry cannot be delivered, but
-the trace may be absent or incomplete. Restarting the default persistent
-Collector keeps committed traces; an explicitly selected `:memory:` Collector
-is cleared on restart.
+The repository intentionally keeps these layers separate:
+
+| Layer | Meaning |
+|---|---|
+| `spec/v0.1-frozen-spec.md` | Historical Frozen compatibility contract for Canonical schema, ingest, privacy, transport, and v1 behavior. It remains authoritative and unchanged. |
+| `spec/v0.2-proposed-spec.md` and `spec/v0.3-proposed-spec.md` | Historical proposed design documents; they are not permission to rewrite the v0.1 contract. |
+| Package metadata | `0.3.0` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
+| Canonical and ingest | Canonical schema `0.1`; ingest protocol `1`. |
+| Query APIs | `/api/v1`, `/api/v2`, and `/api/v3` remain compatibility surfaces. `/api/v4/compare/{left}/{right}` is the additive v0.4 structured-diff projection. |
+| `docs/v0.4/` | Frozen-for-implementation v0.4 design and release requirements; it is not itself a package-version or release declaration. |
+
+The v0.4 API v3/v4 decision is contract-driven. `/api/v3` remains unchanged.
+`/api/v4` is needed because bounded operation diff records, explicit no-diff
+capture semantics, conservative array fallback, and cockpit action targets
+cannot be added to the existing v3 response without changing that contract.
+This is not API versioning caused by the package number.
 
 ## Local validation
 
@@ -320,28 +270,28 @@ Python tests:
 python -m unittest discover -s tests -v
 ```
 
-Frontend tests and build:
+Frontend tests and production build:
 
 ```text
 python scripts/bootstrap.py
 cd frontend
 npm test
+npm run build
 ```
 
-Local wheel/sdist build and installed-package checks are documented in
-[release readiness](https://github.com/doraemonfv-glitch/tracemotive/blob/main/docs/release-readiness.md). These are maintainer and
-developer validation steps; end users should install TraceMotive from PyPI as
-described above.
+Packaging and installed-user checks are maintainer validation documented in
+the [historical release-readiness checklist](docs/release-readiness.md). They
+are separate from the normal installed-user quickstart.
 
 ## Contributing
 
-Contributions are welcome. Before making changes, read
-[CONTRIBUTING.md](https://github.com/doraemonfv-glitch/tracemotive/blob/main/CONTRIBUTING.md). New contributors can start with issues
-labeled [good first issue](https://github.com/doraemonfv-glitch/tracemotive/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
-Keep changes focused and within the Frozen v0.1 contract.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Keep changes
+within the current v0.4 Core scope while preserving the Frozen v0.1 contract.
+Do not infer support for deferred or conditional features from the long-term
+vision or from a passing unit test with a fake framework object.
 
 ## Security
 
 Do not report security vulnerabilities in public Issues or pull requests.
-Read [SECURITY.md](https://github.com/doraemonfv-glitch/tracemotive/blob/main/SECURITY.md) and use GitHub Private Vulnerability Reporting
+Read [SECURITY.md](SECURITY.md) and use GitHub Private Vulnerability Reporting
 from the repository Security page.

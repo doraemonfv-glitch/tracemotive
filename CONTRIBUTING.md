@@ -1,16 +1,25 @@
 # Contributing to TraceMotive
 
-## Scope
+## Contract and current scope
 
-TraceMotive v0.1 follows the [Frozen Specification](spec/v0.1-frozen-spec.md).
-That specification is the highest-authority contract for the project, and
+The [Frozen v0.1 Specification](spec/v0.1-frozen-spec.md) remains the
+highest-authority compatibility contract for Canonical schema, ingest,
+privacy, transport, and v1 behavior. The current checkout also contains the
+additive TraceMotive v0.4 Core implementation through the accepted bootstrap,
+packaging, cockpit, structured-diff, onboarding, and identified/uncertain-demo
+issues. The frozen implementation design is under [docs/v0.4](docs/v0.4/).
+
+The package metadata remains `0.3.0`; current v0.4 implementation work does not
+by itself authorize a version bump or release.
+
 `AGENTS.md` contains repository implementation rules.
 
-- Do not add Deferred or explicitly excluded features to v0.1.
+- Do not add Deferred or explicitly excluded features to the Frozen v0.1
+  contract or the current v0.4 Core.
 - If the specification is ambiguous, do not invent a public contract; open an
   Issue to clarify it first.
-- The long-term vision is non-normative and is not a basis for adding v0.1
-  functionality.
+- The long-term vision is non-normative and is not a basis for adding v0.1 or
+  v0.4 functionality.
 
 ## Development setup
 
@@ -102,15 +111,17 @@ requirement for a pull request.
 - TraceMotive is disabled by default, and content capture is independently
   disabled by default.
 - Redaction must happen before events enter the transport queue.
-- The Collector is loopback-only. Never document or configure the v0.1 server
-  to bind to `0.0.0.0`.
+- The Collector is loopback-only. Never document or configure the server to
+  bind to `0.0.0.0`.
 - Tracing failures must not fail the user's Agent execution.
 - Do not include secrets, personal data, or real captured Agent content in
   fixtures, Issues, pull requests, or logs.
 
-Examples of v0.1-excluded scope include Replay, RCA, Eval or Benchmark,
-distributed tracing, additional framework adapters, cloud or hosted backends,
-authentication, and remote collectors.
+Historical v0.1 exclusions include Replay, RCA, Eval or Benchmark, distributed
+tracing, additional framework adapters, cloud or hosted backends,
+authentication, and remote collectors. Current v0.4 Core also does not claim
+LangGraph support, a full demo catalog, causal diagnosis, ranking, confidence,
+or a hosted service; LangGraph remains conditional on its separate GO gate.
 
 ## When to open an issue first
 
