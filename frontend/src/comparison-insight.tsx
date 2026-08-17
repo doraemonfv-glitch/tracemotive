@@ -50,6 +50,56 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const MAX_INLINE_VALUE_LENGTH = 900;
+export const MAX_LATER_OBSERVATIONS = 5;
+
+const SAFE_LATER_RELATION_LABELS: Record<string, string> = {
+  "same_structural_region|same_coordinate": "same structural region",
+  "descendant_evidence|descendant": "descendant of the starting point",
+  "observed_after|structurally_later_independent": "later in structural triage order",
+};
+
+export type LaterObservationProjection = {
+  finding: InvestigationFinding;
+  relationLabel: string;
+};
+
+function laterRelationLabel(relation: string, structuralRelation: string): string | null {
+  return SAFE_LATER_RELATION_LABELS[`${relation}|${structuralRelation}`] ?? null;
+}
+
+export function projectLaterObservations(
+  investigation: InvestigationSummaryView,
+  findings: InvestigationFinding[],
+): { items: LaterObservationProjection[]; overflow: boolean } {
+  if (investigation.state !== "identified") {
+    return { items: [], overflow: false };
+  }
+
+  const primaryId = investigation.starting_point?.finding_id ?? investigation.first_meaningful_divergence.finding_id;
+  const contextFindingIds = new Set(investigation.context_finding_ids);
+  const findingsById = new Map<string, InvestigationFinding | undefined>();
+  for (const finding of findings) {
+    findingsById.set(finding.finding_id, findingsById.has(finding.finding_id) ? undefined : finding);
+  }
+
+  const items: LaterObservationProjection[] = [];
+  for (const reference of investigation.evidence_summary) {
+    const relationLabel = laterRelationLabel(reference.relation, reference.structural_relation);
+    if (relationLabel === null || reference.finding_id === primaryId || contextFindingIds.has(reference.finding_id)) {
+      continue;
+    }
+    const finding = findingsById.get(reference.finding_id);
+    if (finding === undefined || finding.scope !== "behavioral") {
+      continue;
+    }
+    items.push({ finding, relationLabel });
+  }
+
+  return {
+    items: items.slice(0, MAX_LATER_OBSERVATIONS),
+    overflow: items.length > MAX_LATER_OBSERVATIONS,
+  };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -227,7 +277,7 @@ function LastMatchedEvidence({ point }: { point: InvestigationSummaryView["last_
   }
   const path = point.semantic_path.map((segment) => `${segment.type} / ${segment.name}`).join(" / ") || "Trace root";
   return (
-    <div className="cockpit-last-match">
+    <div className="cockpit-last-match cockpit-look-here-match">
       <span className="comparison-side-label">Last reliably matched point</span>
       <strong>{path}</strong>
       <p>Structural evidence only; this does not describe runtime chronology.</p>
@@ -286,6 +336,39 @@ function CopyActions({ response, evidenceText }: { response: TraceInsightRespons
   );
 }
 
+function LaterObservations({
+  items,
+  overflow,
+}: {
+  items: LaterObservationProjection[];
+  overflow: boolean;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="cockpit-section" aria-labelledby="cockpit-later-heading">
+      <div className="section-heading"><div><h2 id="cockpit-later-heading">Later observations</h2></div></div>
+      <p className="cockpit-order-note">These are additional supported observations in structural triage order, not runtime chronology or cause.</p>
+      <ul className="cockpit-later-list" aria-label="Later observations">
+        {items.map(({ finding, relationLabel }) => (
+          <li key={finding.finding_id} className="cockpit-later-item">
+            <strong>{findingLabel(finding.type)}</strong>
+            <p className="cockpit-path">{pathLabel(finding)}</p>
+            <p>{relationLabel}</p>
+            <div className="cockpit-target-grid">
+              <TargetLocation label="Left span" target={finding.left} />
+              <TargetLocation label="Right span" target={finding.right} />
+            </div>
+          </li>
+        ))}
+      </ul>
+      {overflow && <p className="cockpit-muted">Additional supported observations are available in Full comparison.</p>}
+    </section>
+  );
+}
+
 export function ComparisonInsight({
   response,
   onOpenDetails,
@@ -303,6 +386,7 @@ export function ComparisonInsight({
   const evidenceFinding = primary ?? investigation.evidence_summary
     .map((reference) => findingsById.get(reference.finding_id))
     .find((finding): finding is InvestigationFinding => finding !== undefined) ?? null;
+  const laterObservations = projectLaterObservations(investigation, response.findings);
   const uncertaintyById = new Map(response.uncertainties.map((uncertainty) => [uncertainty.uncertainty_id, uncertainty]));
   const limitationIds = [...new Set([
     ...investigation.limitations.map((limitation) => limitation.uncertainty_id),
@@ -357,6 +441,7 @@ export function ComparisonInsight({
           </div>
         )}
         <p className="cockpit-order-note">The starting point follows deterministic structural triage order, not runtime chronology.</p>
+        <LastMatchedEvidence point={investigation.last_reliably_matched_point} />
       </section>
 
       <section className="cockpit-section" aria-labelledby="cockpit-what-changed-heading">
@@ -374,6 +459,8 @@ export function ComparisonInsight({
         )}
       </section>
 
+      <LaterObservations items={laterObservations.items} overflow={laterObservations.overflow} />
+
       <section className="cockpit-section" aria-labelledby="cockpit-evidence-heading">
         <div className="section-heading"><div><h2 id="cockpit-evidence-heading">Evidence</h2></div></div>
         {evidenceFinding !== null && <ObservationEvidence finding={evidenceFinding} />}
@@ -384,12 +471,7 @@ export function ComparisonInsight({
           </ul>
         )}
         {evidenceFinding === null && limitations.length === 0 && <p className="cockpit-muted">No additional evidence was available for this result.</p>}
-        <LastMatchedEvidence point={investigation.last_reliably_matched_point} />
         <CopyActions response={response} evidenceText={evidenceText} />
-      </section>
-
-      <section className="cockpit-section" aria-labelledby="cockpit-next-heading">
-        <div className="section-heading"><div><h2 id="cockpit-next-heading">Next</h2></div></div>
         <div className="cockpit-primary-actions">
           {investigation.state === "identified" && investigation.starting_point?.left !== null && investigation.starting_point?.left !== undefined && (
             <button type="button" className="primary-button" onClick={() => openTarget(investigation.starting_point!.left)}>Open left span</button>

@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComparisonInsight } from "./comparison-insight";
+import { ComparisonInsight, projectLaterObservations } from "./comparison-insight";
 import type {
   ComparisonPathSegment,
   ComparisonSpanRef,
   InvestigationCoordinate,
   InvestigationFinding,
+  InvestigationFindingType,
   TraceInsightResponse,
 } from "./types";
 
@@ -55,6 +56,23 @@ function finding(overrides: Partial<InvestigationFinding> = {}): InvestigationFi
   };
 }
 
+function laterFinding(
+  findingId: string,
+  name: string,
+  type: InvestigationFindingType = "new_error",
+  scope: InvestigationFinding["scope"] = "behavioral",
+): InvestigationFinding {
+  return finding({
+    finding_id: findingId,
+    type,
+    coordinate: coordinate(name),
+    left: ref(leftTraceId, findingId.slice(-16).padStart(16, "0")),
+    right: ref(rightTraceId, findingId.slice(-16).padStart(16, "1")),
+    field_path: type === "new_error" ? "/error" : "/output",
+    scope,
+  });
+}
+
 function baseResponse(primary = finding()): TraceInsightResponse {
   return {
     comparison_version: "0.3",
@@ -88,6 +106,28 @@ function baseResponse(primary = finding()): TraceInsightResponse {
     findings: [primary],
     uncertainties: [],
     detail_endpoint: { method: "GET", path: `/api/v2/compare/${leftTraceId}/${rightTraceId}`, comparison_version: "0.2" },
+  };
+}
+
+function withLaterObservations(
+  response: TraceInsightResponse,
+  items: Array<{ finding: InvestigationFinding; relation: string; structural_relation: string }>,
+): TraceInsightResponse {
+  return {
+    ...response,
+    findings: [...response.findings, ...items.map((item) => item.finding)],
+    investigation: {
+      ...response.investigation,
+      evidence_summary: items.map((item) => ({
+        finding_id: item.finding.finding_id,
+        relation: item.relation,
+        structural_relation: item.structural_relation,
+      })),
+    },
+    summary: {
+      ...response.summary,
+      finding_count: BigInt(response.findings.length + items.length),
+    },
   };
 }
 
@@ -127,17 +167,20 @@ function renderInsight(response: TraceInsightResponse, onOpenSpan = vi.fn(), onO
 }
 
 describe("V04-03 investigation cockpit", () => {
-  it("renders the five sections and identified state with all supported primary actions", () => {
+  it("renders the identified state with all supported primary actions", () => {
     const onOpenSpan = vi.fn();
     const onOpenDetails = vi.fn();
     const { container } = renderInsight(baseResponse(), onOpenSpan, onOpenDetails);
 
-    expect(container.querySelectorAll("article[aria-label='Investigation cockpit'] > section")).toHaveLength(5);
-    for (const heading of ["Look here", "What changed", "Evidence", "Next", "What TraceMotive does not know"]) {
+    expect(container.querySelectorAll("article[aria-label='Investigation cockpit'] > section")).toHaveLength(4);
+    for (const heading of ["Look here", "What changed", "Evidence", "What TraceMotive does not know"]) {
       expect(screen.getByRole("heading", { name: heading, level: 2 })).toBeTruthy();
     }
+    expect(screen.queryByRole("heading", { name: "Next", level: 2 })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Later observations", level: 2 })).toBeNull();
     expect(screen.getByText("Identified")).toBeTruthy();
     expect(screen.getByText("agent / Root / tool / Changed tool")).toBeTruthy();
+    expect(screen.getByText("Last reliably matched point")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open left span" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open right span" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Full comparison" })).toBeTruthy();
@@ -272,5 +315,177 @@ describe("V04-03 investigation cockpit", () => {
     expect(await screen.findByText("Clipboard unavailable. Select the text below.")).toBeTruthy();
     expect(screen.getByText(`#/compare/${leftTraceId}/${rightTraceId}`)).toBeTruthy();
     expect(screen.queryByText(/https?:\/\//)).toBeNull();
+  });
+});
+
+describe("V05-01 later observations", () => {
+  it("renders allowlisted later observations in evidence_summary order", () => {
+    const laterSame = laterFinding("finding-0002", "Same region tool", "tool_input_changed");
+    const laterDescendant = laterFinding("finding-0003", "Descendant tool");
+    const laterIndependent = laterFinding("finding-0004", "Independent tool", "tool_added");
+    const response = withLaterObservations(baseResponse(), [
+      { finding: laterSame, relation: "same_structural_region", structural_relation: "same_coordinate" },
+      { finding: laterDescendant, relation: "descendant_evidence", structural_relation: "descendant" },
+      { finding: laterIndependent, relation: "observed_after", structural_relation: "structurally_later_independent" },
+    ]);
+
+    renderInsight(response);
+
+    expect(screen.getByRole("heading", { name: "Later observations", level: 2 })).toBeTruthy();
+    expect(screen.getByText("These are additional supported observations in structural triage order, not runtime chronology or cause.")).toBeTruthy();
+    const laterList = screen.getByRole("list", { name: "Later observations" });
+    expect(laterList.textContent).toContain("same structural region");
+    expect(laterList.textContent).toContain("descendant of the starting point");
+    expect(laterList.textContent).toContain("later in structural triage order");
+    expect(Array.from(laterList.querySelectorAll(".cockpit-later-item strong")).map((item) => item.textContent)).toEqual([
+      "Tool input changed",
+      "New error observed",
+      "Tool appeared",
+    ]);
+    expect(screen.getByText("agent / Root / tool / Changed tool")).toBeTruthy();
+    expect(projectLaterObservations(response.investigation, response.findings).items.map((item) => item.finding.finding_id)).toEqual([
+      "finding-0002",
+      "finding-0003",
+      "finding-0004",
+    ]);
+  });
+
+  it("excludes unsafe, unknown, context-only, unresolved, and primary later items", () => {
+    const primary = finding();
+    const unsafeBranch = laterFinding("finding-0002", "Unrelated tool");
+    const siblingFiller = laterFinding("finding-0003", "Sibling filler");
+    const blocked = laterFinding("finding-0004", "Blocked tool");
+    const contextOnly = laterFinding("finding-0005", "Model metadata", "model_changed", "context_only");
+    const unknownCombo = laterFinding("finding-0006", "Unknown combo");
+    const unresolved = laterFinding("finding-0007", "Missing finding");
+    const safe = laterFinding("finding-0008", "Safe later tool", "tool_added");
+    const response = withLaterObservations(baseResponse(primary), [
+      { finding: primary, relation: "same_structural_region", structural_relation: "same_coordinate" },
+      { finding: unsafeBranch, relation: "observed_after", structural_relation: "unrelated_branch" },
+      { finding: siblingFiller, relation: "observed_after", structural_relation: "additional_observation" },
+      { finding: blocked, relation: "blocked_by_uncertainty", structural_relation: "additional_observation" },
+      { finding: contextOnly, relation: "same_structural_region", structural_relation: "same_coordinate" },
+      { finding: unknownCombo, relation: "future_relation", structural_relation: "future_structure" },
+      { finding: unresolved, relation: "descendant_evidence", structural_relation: "descendant" },
+      { finding: safe, relation: "observed_after", structural_relation: "structurally_later_independent" },
+    ]);
+    response.findings = response.findings.filter((item) => item.finding_id !== "finding-0007");
+
+    renderInsight(response);
+
+    const laterList = screen.getByRole("list", { name: "Later observations" });
+    expect(laterList.querySelectorAll(".cockpit-later-item")).toHaveLength(1);
+    expect(laterList.textContent).toContain("Tool appeared");
+    expect(laterList.textContent).toContain("later in structural triage order");
+    expect(laterList.textContent).not.toContain("finding-0001");
+    expect(screen.queryByText("agent / Root / tool / Unrelated tool")).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Sibling filler")).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Blocked tool")).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Model metadata")).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Unknown combo")).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Missing finding")).toBeNull();
+    expect(projectLaterObservations(response.investigation, response.findings).items.map((item) => item.finding.finding_id)).toEqual(["finding-0008"]);
+  });
+
+  it("excludes an allowlisted later item when the finding_id matches more than one finding", () => {
+    const later = laterFinding("finding-0002", "Duplicate id tool", "tool_added");
+    const duplicate = laterFinding("finding-0002", "Duplicate id twin", "new_error");
+    const response = withLaterObservations(baseResponse(), [
+      { finding: later, relation: "observed_after", structural_relation: "structurally_later_independent" },
+    ]);
+    response.findings = [...response.findings, duplicate];
+
+    renderInsight(response);
+
+    expect(screen.queryByRole("heading", { name: "Later observations", level: 2 })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Later observations" })).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Duplicate id tool")).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Duplicate id twin")).toBeNull();
+    expect(projectLaterObservations(response.investigation, response.findings).items).toEqual([]);
+  });
+
+  it("excludes an allowlisted behavioral finding listed in context_finding_ids", () => {
+    const later = laterFinding("finding-0002", "Context listed tool", "tool_added");
+    const response = withLaterObservations(baseResponse(), [
+      { finding: later, relation: "same_structural_region", structural_relation: "same_coordinate" },
+    ]);
+    response.investigation = {
+      ...response.investigation,
+      context_finding_ids: ["finding-0002"],
+    };
+
+    renderInsight(response);
+
+    expect(screen.queryByRole("heading", { name: "Later observations", level: 2 })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Later observations" })).toBeNull();
+    expect(screen.queryByText("agent / Root / tool / Context listed tool")).toBeNull();
+    expect(projectLaterObservations(response.investigation, response.findings).items).toEqual([]);
+  });
+
+  it("renders at most five later observations in evidence_summary order", () => {
+    const extras = Array.from({ length: 6 }, (_, index) => laterFinding(`finding-000${index + 2}`, `Later tool ${index + 1}`, "tool_added"));
+    const response = withLaterObservations(baseResponse(), extras.map((item) => ({
+      finding: item,
+      relation: "observed_after",
+      structural_relation: "structurally_later_independent",
+    })));
+
+    renderInsight(response);
+
+    const laterItems = screen.getByRole("list", { name: "Later observations" }).querySelectorAll(".cockpit-later-item");
+    expect(laterItems).toHaveLength(5);
+    expect(Array.from(laterItems).map((item) => item.querySelector(".cockpit-path")?.textContent)).toEqual([
+      "agent / Root / tool / Later tool 1",
+      "agent / Root / tool / Later tool 2",
+      "agent / Root / tool / Later tool 3",
+      "agent / Root / tool / Later tool 4",
+      "agent / Root / tool / Later tool 5",
+    ]);
+    expect(screen.getByText("Additional supported observations are available in Full comparison.")).toBeTruthy();
+    expect(screen.queryByText("agent / Root / tool / Later tool 6")).toBeNull();
+  });
+
+  it("renders zero later observations for uncertain and none", () => {
+    const later = laterFinding("finding-0002", "Later tool", "tool_added");
+    const uncertain = withLaterObservations(makeUncertain(), [
+      { finding: later, relation: "observed_after", structural_relation: "structurally_later_independent" },
+    ]);
+    const none = withLaterObservations(makeNone(), [
+      { finding: later, relation: "same_structural_region", structural_relation: "same_coordinate" },
+    ]);
+
+    const first = renderInsight(uncertain);
+    expect(screen.queryByRole("heading", { name: "Later observations", level: 2 })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Later observations" })).toBeNull();
+    expect(projectLaterObservations(uncertain.investigation, uncertain.findings).items).toEqual([]);
+    first.unmount();
+
+    renderInsight(none);
+    expect(screen.queryByRole("heading", { name: "Later observations", level: 2 })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Later observations" })).toBeNull();
+    expect(projectLaterObservations(none.investigation, none.findings).items).toEqual([]);
+  });
+
+  it("keeps hostile later names inert and does not change existing actions", () => {
+    const hostile = "<script>alert('later')</script>";
+    const later = laterFinding("finding-0002", hostile, "new_error");
+    const onOpenSpan = vi.fn();
+    const onOpenDetails = vi.fn();
+    const { container } = renderInsight(
+      withLaterObservations(baseResponse(), [
+        { finding: later, relation: "descendant_evidence", structural_relation: "descendant" },
+      ]),
+      onOpenSpan,
+      onOpenDetails,
+    );
+
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.textContent).toContain(hostile);
+    expect(screen.getByText("descendant of the starting point")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open left span" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open right span" }));
+    fireEvent.click(screen.getByRole("button", { name: "Full comparison" }));
+    expect(onOpenSpan.mock.calls).toEqual([[leftTraceId, leftSpanId], [rightTraceId, rightSpanId]]);
+    expect(onOpenDetails).toHaveBeenCalledOnce();
   });
 });

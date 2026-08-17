@@ -347,6 +347,12 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
 .cockpit-last-match { display: grid; gap: 4px; }
 .cockpit-last-match strong { color: #27334a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
 .cockpit-last-match p { color: #566176; font-size: 0.82rem; margin: 0; }
+.cockpit-look-here-match { border-top: 1px solid #e3e7ee; margin-top: 13px; padding-top: 12px; }
+.cockpit-later-list { display: grid; gap: 10px; list-style: none; margin: 12px 0 0; padding: 0; }
+.cockpit-later-item { background: #f7f9fc; border: 1px solid #e0e5ee; border-radius: 8px; display: grid; gap: 6px; min-width: 0; padding: 12px; }
+.cockpit-later-item strong { color: #27334a; font-size: 0.92rem; overflow-wrap: anywhere; }
+.cockpit-later-item p { color: #3e485b; margin: 0; }
+.cockpit-later-item .cockpit-target-grid { margin-top: 8px; }
 .cockpit-limitation-list, .cockpit-evidence-limitations { color: #735500; font-size: 0.82rem; margin: 11px 0 0; padding-left: 19px; }
 .cockpit-evidence-limitations { color: #566176; }
 .cockpit-primary-actions, .cockpit-secondary-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 9px; }
