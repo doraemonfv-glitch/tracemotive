@@ -144,8 +144,7 @@ source-checkout documentation only.
 
 ## Install a released package
 
-The current release candidate distribution metadata is `0.4.1`; this checkout
-is prepared for release but has not been published. For a normal installation:
+The current package version is `0.4.1`. For a normal installation:
 
 ```text
 python -m pip install tracemotive

@@ -5,7 +5,23 @@ import re
 import unittest
 
 from tests.divergence_evaluation import build_evaluation_corpus
+from tests.release_consistency import (
+    DEVELOPMENT_DOCUMENT_PATHS,
+    HISTORICAL_DOCUMENT_PATHS,
+    find_checkout_commands,
+    find_current_langgraph_support_claims,
+    find_current_version_claims,
+    find_stale_publication_claims,
+    frontend_lockfile_root_version,
+    frontend_package_version,
+    installed_user_readme_section,
+    live_document_texts,
+    package_version,
+    pypi_long_description_source,
+)
+from tracemotive.canonical.models import AGENTLENS_SCHEMA_VERSION
 from tracemotive.cli import _parser
+from tracemotive.collector import PROTOCOL_VERSION
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +104,119 @@ class DocumentationTests(unittest.TestCase):
                 continue
             relative = target.split("#", 1)[0]
             self.assertTrue((ROOT / relative).exists(), target)
+
+
+class ReleaseConsistencyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.version = package_version()
+        cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        cls.installed = installed_user_readme_section(cls.readme)
+        cls.live = live_document_texts()
+
+    def test_pyproject_version_is_authoritative_and_matches_frontend_root(self) -> None:
+        frontend_version = frontend_package_version()
+        lock_top, lock_nested = frontend_lockfile_root_version()
+        self.assertRegex(self.version, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(
+            frontend_version,
+            self.version,
+            f"frontend/package.json version {frontend_version} does not match pyproject.toml version {self.version}",
+        )
+        self.assertEqual(
+            lock_top,
+            self.version,
+            f"frontend/package-lock.json version {lock_top} does not match pyproject.toml version {self.version}",
+        )
+        self.assertEqual(
+            lock_nested,
+            self.version,
+            f"frontend/package-lock.json packages[''].version {lock_nested} does not match pyproject.toml version {self.version}",
+        )
+
+    def test_live_current_version_claims_match_pyproject(self) -> None:
+        for path, text in self.live.items():
+            for claimed in find_current_version_claims(text):
+                self.assertEqual(
+                    claimed,
+                    self.version,
+                    f"{path.relative_to(ROOT)} current-version claim {claimed} does not match pyproject.toml version {self.version}",
+                )
+        self.assertIn(
+            f"The current package version is `{self.version}`.",
+            self.readme,
+            "README current-package version sentence is missing or no longer matches pyproject.toml",
+        )
+        self.assertIn(
+            f"| Package metadata | `{self.version}` distribution version",
+            self.readme,
+            "README compatibility table current-package version does not match pyproject.toml",
+        )
+
+    def test_pypi_long_description_source_is_readme(self) -> None:
+        self.assertEqual(pypi_long_description_source(), "README.md")
+
+    def test_live_docs_have_no_stale_current_publication_wording(self) -> None:
+        for path, text in self.live.items():
+            stale = find_stale_publication_claims(text)
+            self.assertEqual(
+                stale,
+                [],
+                f"{path.relative_to(ROOT)} contains stale current-package publication wording: {stale[0] if stale else ''}",
+            )
+
+    def test_readme_installed_user_path_uses_packaged_commands(self) -> None:
+        self.assertIn('python -m pip install "tracemotive[server]"', self.installed)
+        self.assertIn('python -m pip install "tracemotive[openai-agents]"', self.installed)
+        self.assertIn("from tracemotive.integrations.openai_agents import install", self.installed)
+        checkout = find_checkout_commands(self.installed)
+        self.assertEqual(
+            checkout,
+            [],
+            "README installed-user onboarding contains checkout-only command:\n" + "\n".join(checkout),
+        )
+        self.assertNotIn("python -m examples", self.installed)
+        self.assertIn("Normal installed users do not install Node.js", self.installed)
+
+    def test_live_support_claims_are_consistent(self) -> None:
+        self.assertIn("validated framework integration is the public OpenAI Agents SDK adapter", self.readme)
+        self.assertIn("Generic Python support is manual instrumentation", self.readme)
+        self.assertIn("LangGraph is not currently supported.", self.readme)
+        for path, text in self.live.items():
+            claims = find_current_langgraph_support_claims(text)
+            self.assertEqual(
+                claims,
+                [],
+                f"{path.relative_to(ROOT)} advertises current LangGraph support: {claims[0] if claims else ''}",
+            )
+
+    def test_compatibility_claims_match_source_and_do_not_invent_v5(self) -> None:
+        self.assertIn(f"Canonical schema `{AGENTLENS_SCHEMA_VERSION}`", self.readme)
+        self.assertIn(f"ingest protocol `{PROTOCOL_VERSION}`", self.readme)
+        self.assertIn("`/api/v1`", self.readme)
+        self.assertIn("`/api/v2`", self.readme)
+        self.assertIn("`/api/v3`", self.readme)
+        self.assertIn("`/api/v4/compare/{left}/{right}`", self.readme)
+        for path, text in self.live.items():
+            self.assertNotIn(
+                "/api/v5",
+                text,
+                f"{path.relative_to(ROOT)} introduces /api/v5",
+            )
+
+    def test_development_docs_may_keep_checkout_commands(self) -> None:
+        contributing = DEVELOPMENT_DOCUMENT_PATHS[0].read_text(encoding="utf-8")
+        examples = DEVELOPMENT_DOCUMENT_PATHS[1].read_text(encoding="utf-8")
+        self.assertIn("pip install -e", contributing)
+        self.assertIn("scripts/bootstrap.py", contributing)
+        self.assertIn("python -m examples.openai_agents_example", examples)
+
+    def test_historical_design_docs_are_not_live_product_claims(self) -> None:
+        historical = "\n".join(path.read_text(encoding="utf-8") for path in HISTORICAL_DOCUMENT_PATHS)
+        self.assertTrue(historical)
+        live = "\n".join(self.live.values())
+        self.assertNotIn("conditional v0.4 design work", live)
+        self.assertIn("LangGraph", historical)
 
 
 if __name__ == "__main__":
