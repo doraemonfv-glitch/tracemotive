@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TraceMotiveApp, traceIdFromLocation, traceRoute } from "./app";
-import { decodeSpanListResponse, decodeTraceDetailResponse, spanListUrl, traceDetailUrl } from "./api";
+import { comparisonIdsFromLocation, comparisonRoute, spanIdsFromLocation, spanRoute, TraceMotiveApp, traceIdFromLocation, traceRoute } from "./app";
+import { decodeSpanListResponse, decodeTraceDetailResponse, spanDetailUrl, spanListUrl, traceDetailUrl } from "./api";
 import { TraceDetail } from "./trace-detail";
 
 const traceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -80,6 +80,23 @@ describe("Trace Detail", () => {
     expect(screen.queryByText(/not found.*database/i)).toBeNull();
   });
 
+  it("keeps a deep-linked missing span explicit instead of selecting a fallback", async () => {
+    const selectedSpanId = "9999999999999999";
+    const fetchMock = vi.fn((url: string) => {
+      if (url === spanDetailUrl(traceId, selectedSpanId)) {
+        return Promise.resolve(response('{"error":{"code":"not_found","message":"not found"}}', 404));
+      }
+      return Promise.resolve(url.endsWith("/spans") ? response(spansResponse(traceId)) : response(detailResponse(traceId)));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TraceDetail traceId={traceId} spanId={selectedSpanId} onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Span unavailable or not found.")).toBeTruthy();
+    expect(screen.getByText(`${traceId} / ${selectedSpanId}`)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(spanDetailUrl(traceId, selectedSpanId), expect.objectContaining({ method: "GET" }));
+  });
+
   it("keeps the current trace when an obsolete trace resolves late", async () => {
     const aDetail = deferred<Response>();
     const aSpans = deferred<Response>();
@@ -112,7 +129,13 @@ describe("Trace Detail", () => {
   it("uses a safe exact-ID route and list-to-detail navigation", async () => {
     const unusualId = "trace/with?reserved&chars";
     expect(traceRoute(unusualId)).toBe("#/traces/trace%2Fwith%3Freserved%26chars");
-    expect(traceIdFromLocation({ hash: traceRoute(unusualId) })).toBe(unusualId);
+    expect(traceIdFromLocation({ hash: traceRoute(unusualId) })).toBeNull();
+    expect(spanRoute(traceId, "1111111111111111")).toBe("#/traces/" + traceId + "/spans/1111111111111111");
+    expect(spanIdsFromLocation({ hash: spanRoute(traceId, "1111111111111111") })).toEqual({ traceId, spanId: "1111111111111111" });
+    expect(spanIdsFromLocation({ hash: "#/traces/../spans/1111111111111111" })).toBeNull();
+    expect(spanIdsFromLocation({ hash: `#/traces/${traceId}/spans/../secret` })).toBeNull();
+    expect(comparisonIdsFromLocation({ hash: comparisonRoute(traceId, otherTraceId) })).toEqual({ leftTraceId: traceId, rightTraceId: otherTraceId });
+    expect(comparisonIdsFromLocation({ hash: "#/compare/../secret/" + otherTraceId })).toBeNull();
 
     window.history.replaceState({}, "", "#/" );
     const listPayload = `{"items":[{"trace_id":"${traceId}","name":"Open me","started_at":"2026-08-10T13:00:00Z","ended_at":null,"status":"unset","latency_ms":null,"span_count":0,"error_count":0,"llm_call_count":0,"input_tokens":null,"output_tokens":null}],"limit":50,"offset":0,"total":1}`;

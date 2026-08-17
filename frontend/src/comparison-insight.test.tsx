@@ -6,38 +6,41 @@ import type {
   ComparisonSpanRef,
   InvestigationCoordinate,
   InvestigationFinding,
-  InvestigationEvidenceReference,
   TraceInsightResponse,
 } from "./types";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const leftTraceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const rightTraceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const leftSpanId = "1111111111111111";
+const rightSpanId = "2222222222222222";
 
 function ref(traceId: string, spanId: string): ComparisonSpanRef {
   return { trace_id: traceId, span_id: spanId };
 }
 
-function path(name: string, ordinal = 0): ComparisonPathSegment[] {
+function path(name: string): ComparisonPathSegment[] {
   return [
     { type: "agent", operation: "agent.run", name: "Root", ordinal: 0 },
-    { type: "tool", operation: "tool.call", name, ordinal },
+    { type: "tool", operation: "tool.call", name, ordinal: 0 },
   ];
 }
 
-function coordinate(name: string, kind: InvestigationCoordinate["kind"] = "span", ordinal = 0): InvestigationCoordinate {
-  return { kind, semantic_path: path(name, ordinal), group_signature: kind === "sibling_group" ? { type: "tool", operation: "tool.call", name } : null };
+function coordinate(name = "Changed tool", kind: InvestigationCoordinate["kind"] = "span"): InvestigationCoordinate {
+  return { kind, semantic_path: path(name), group_signature: kind === "sibling_group" ? { type: "tool", operation: "tool.call", name } : null };
 }
 
 function finding(overrides: Partial<InvestigationFinding> = {}): InvestigationFinding {
-  const findingCoordinate = overrides.coordinate ?? coordinate("Changed tool");
   return {
     finding_id: "finding-0001",
     type: "tool_output_changed",
-    coordinate: findingCoordinate,
-    left: ref(leftTraceId, "left-span"),
-    right: ref(rightTraceId, "right-span"),
+    coordinate: coordinate(),
+    left: ref(leftTraceId, leftSpanId),
+    right: ref(rightTraceId, rightSpanId),
     field_path: "/output",
     scope: "behavioral",
     observation_state: "confirmed_observation",
@@ -55,10 +58,10 @@ function finding(overrides: Partial<InvestigationFinding> = {}): InvestigationFi
 function baseResponse(primary = finding()): TraceInsightResponse {
   return {
     comparison_version: "0.3",
-    left_trace: { trace_id: leftTraceId, name: "Good run", status: "ok" },
-    right_trace: { trace_id: rightTraceId, name: "Bad run", status: "error" },
+    left_trace: { trace_id: leftTraceId, name: "Left run", status: "ok" },
+    right_trace: { trace_id: rightTraceId, name: "Right run", status: "error" },
     summary: {
-      alignment: { matched_spans: 2n, left_only_spans: 0n, right_only_spans: 0n, ambiguous_groups: 0n, unavailable_spans: 0n },
+      alignment: { matched_spans: 1n, left_only_spans: 0n, right_only_spans: 0n, ambiguous_groups: 0n, unavailable_spans: 0n },
       finding_count: 1n,
       uncertainty_count: 0n,
       trace_fields: [],
@@ -76,7 +79,7 @@ function baseResponse(primary = finding()): TraceInsightResponse {
         label: "Inspect observed tool output change",
       },
       first_meaningful_divergence: { state: "identified", ordering_basis: "structural_triage_order", finding_id: primary.finding_id, reason_code: primary.reason_code },
-      last_reliably_matched_point: { semantic_path: path("Stable"), left: ref(leftTraceId, "stable-left"), right: ref(rightTraceId, "stable-right"), state: "matched", reason: "before_first_finding" },
+      last_reliably_matched_point: { semantic_path: path("Stable"), left: ref(leftTraceId, "3333333333333333"), right: ref(rightTraceId, "4444444444444444"), state: "matched", reason: "before_first_finding" },
       evidence_summary: [],
       context_finding_ids: [],
       blocking_uncertainty_ids: [],
@@ -88,27 +91,66 @@ function baseResponse(primary = finding()): TraceInsightResponse {
   };
 }
 
-function addEvidence(response: TraceInsightResponse, refs: InvestigationEvidenceReference[], findings: InvestigationFinding[]): TraceInsightResponse {
-  return {
-    ...response,
-    summary: { ...response.summary, finding_count: BigInt(findings.length) },
-    investigation: { ...response.investigation, evidence_summary: refs },
-    findings,
+function makeUncertain(): TraceInsightResponse {
+  const response = baseResponse();
+  response.investigation = {
+    ...response.investigation,
+    state: "uncertain",
+    starting_point: null,
+    first_meaningful_divergence: { state: "uncertain", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
+    blocking_uncertainty_ids: ["uncertainty-0001"],
+    limitations: [{ uncertainty_id: "uncertainty-0001", reason_code: "repeated_sibling_ambiguity", side: "both", coordinate: coordinate("Repeated lookup", "sibling_group"), blocks_earlier_claim: true }],
   };
+  response.findings = [];
+  response.summary.finding_count = 0n;
+  response.summary.uncertainty_count = 1n;
+  response.uncertainties = [{ uncertainty_id: "uncertainty-0001", coordinate: coordinate("Repeated lookup", "sibling_group"), reason_code: "repeated_sibling_ambiguity", side: "both", blocks_earlier_claim: true, evidence: [] }];
+  return response;
 }
 
-describe("ComparisonInsight", () => {
-  it("makes the identified behavioral observation the primary place to begin", () => {
-    render(<ComparisonInsight response={baseResponse()} onOpenDetails={vi.fn()} detailsState="closed" />);
+function makeNone(): TraceInsightResponse {
+  const response = baseResponse();
+  response.investigation = {
+    ...response.investigation,
+    state: "none",
+    starting_point: null,
+    first_meaningful_divergence: { state: "none", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
+    last_reliably_matched_point: { semantic_path: [], left: null, right: null, state: "none", reason: "no_prior_resolved_point" },
+  };
+  response.findings = [];
+  response.summary.finding_count = 0n;
+  return response;
+}
 
-    expect(screen.getAllByRole("heading", { name: "Investigation starting point" }).length).toBe(2);
-    expect(screen.getByRole("heading", { name: "Tool output changed" })).toBeTruthy();
-    expect(screen.getByText("TraceMotive observed this difference and selected it as the first supported place to investigate. TraceMotive does not know whether the difference caused later behavior.")).toBeTruthy();
-    expect(screen.getByText("Last reliably matched point")).toBeTruthy();
-    expect(screen.queryByText("tool_output_changed")).toBeNull();
+function renderInsight(response: TraceInsightResponse, onOpenSpan = vi.fn(), onOpenDetails = vi.fn()) {
+  return render(<ComparisonInsight response={response} onOpenSpan={onOpenSpan} onOpenDetails={onOpenDetails} detailsState="closed" />);
+}
+
+describe("V04-03 investigation cockpit", () => {
+  it("renders the five sections and identified state with all supported primary actions", () => {
+    const onOpenSpan = vi.fn();
+    const onOpenDetails = vi.fn();
+    const { container } = renderInsight(baseResponse(), onOpenSpan, onOpenDetails);
+
+    expect(container.querySelectorAll("article[aria-label='Investigation cockpit'] > section")).toHaveLength(5);
+    for (const heading of ["Look here", "What changed", "Evidence", "Next", "What TraceMotive does not know"]) {
+      expect(screen.getByRole("heading", { name: heading, level: 2 })).toBeTruthy();
+    }
+    expect(screen.getByText("Identified")).toBeTruthy();
+    expect(screen.getByText("agent / Root / tool / Changed tool")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open left span" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open right span" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Full comparison" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open left span" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open right span" }));
+    fireEvent.click(screen.getByRole("button", { name: "Full comparison" }));
+    expect(onOpenSpan.mock.calls).toEqual([[leftTraceId, leftSpanId], [rightTraceId, rightSpanId]]);
+    expect(onOpenDetails).toHaveBeenCalledOnce();
+    expect(screen.getByText("This observed divergence is not proof of cause.")).toBeTruthy();
   });
 
-  it("uses the plain-language label for a new error primary finding", () => {
+  it("uses the plain-language label for a supported new-error finding", () => {
     const errorFinding = finding({
       type: "new_error",
       field_path: "/error",
@@ -116,187 +158,84 @@ describe("ComparisonInsight", () => {
       observed: { left: { state: "present", value: null }, right: { state: "present", value: { type: "TimeoutError" } } },
     });
 
-    render(<ComparisonInsight response={baseResponse(errorFinding)} onOpenDetails={vi.fn()} detailsState="closed" />);
+    renderInsight(baseResponse(errorFinding));
 
     expect(screen.getByRole("heading", { name: "New error observed" })).toBeTruthy();
-    expect(screen.queryByText("aligned_span_error_changed")).toBeNull();
+    expect(screen.getByText("Observed error evidence differs between the left and right trace.")).toBeTruthy();
+    expect(screen.queryByText("new_error")).toBeNull();
   });
 
-  it("shows blocking uncertainty without inventing a starting-point card", () => {
-    const later = finding({ finding_id: "finding-0002", type: "tool_added", coordinate: coordinate("Later tool"), left: null, right: ref(rightTraceId, "later-right"), field_path: null, reason_code: "right_only" });
-    const response = addEvidence(baseResponse(), [{ finding_id: later.finding_id, relation: "observed_after", structural_relation: "descendant" }], [later]);
-    response.investigation = {
-      ...response.investigation,
-      state: "uncertain",
-      starting_point: null,
-      first_meaningful_divergence: { state: "uncertain", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
-      last_reliably_matched_point: { semantic_path: [], left: null, right: null, state: "none", reason: "blocking_uncertainty" },
-      blocking_uncertainty_ids: ["uncertainty-0001"],
-    };
-    response.summary.uncertainty_count = 1n;
-    response.uncertainties = [{ uncertainty_id: "uncertainty-0001", coordinate: coordinate("Repeated lookup", "sibling_group"), reason_code: "repeated_sibling_ambiguity", side: "both", blocks_earlier_claim: true, evidence: [] }];
+  it("renders uncertain as a limitation and omits unsupported span actions", () => {
+    renderInsight(makeUncertain());
 
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    expect(screen.getByText("TraceMotive cannot safely choose the first point")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Repeated members are ambiguous" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Additional behavioral observations" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Tool appeared" })).toBeTruthy();
-    expect(screen.getByText("Descendant observation")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Investigation starting point" })).toBeNull();
+    expect(screen.getByText("Uncertain")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "No supported starting point" })).toBeTruthy();
+    expect(screen.getAllByText("Repeated members are ambiguous on both traces.")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Open left span" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open right span" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Full comparison" })).toBeTruthy();
   });
 
-  it("keeps context-only changes visible without presenting them as divergence", () => {
-    const context = finding({
-      finding_id: "finding-context",
-      type: "model_changed",
-      scope: "context_only",
-      field_path: "/details/request_model",
-      reason_code: "aligned_values_differ",
-      observed: { left: { state: "captured", value: "model-a" }, right: { state: "captured", value: "model-b" } },
-    });
-    const response = baseResponse(context);
-    response.summary.finding_count = 1n;
-    response.investigation = {
-      ...response.investigation,
-      state: "none",
-      starting_point: null,
-      first_meaningful_divergence: { state: "none", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
-      evidence_summary: [],
-      context_finding_ids: [context.finding_id],
-    };
-    response.findings = [context];
+  it("uses safe generic copy for an unknown uncertainty reason", () => {
+    const response = makeUncertain();
+    const hostileReason = "future_<script>alert('xss')</script>";
+    response.uncertainties[0].reason_code = hostileReason;
 
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
+    const { container } = renderInsight(response);
 
-    expect(screen.getByRole("heading", { name: "No supported behavioral divergence found" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Model changed" })).toBeTruthy();
-    expect(screen.getByText("These observations provide context. They are not behavioral divergence or an investigation starting point.")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Investigation starting point" })).toBeNull();
+    expect(screen.getAllByText("TraceMotive could not safely resolve this observation on both traces.")).toHaveLength(2);
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.textContent).not.toContain(hostileReason);
   });
 
-  it("renders every frozen finding enum with a plain-language label", () => {
-    const findingTypes = [
-      "new_error", "resolved_error", "tool_input_changed", "tool_output_changed", "tool_added", "tool_removed",
-      "execution_subtree_added", "execution_subtree_removed", "tool_repetition_changed", "model_changed",
-      "request_parameters_changed", "trace_status_changed",
-    ] as const;
-    const findings = findingTypes.map((type, index) => finding({ finding_id: `finding-context-${index}`, type, scope: "context_only" }));
-    const response = baseResponse(findings[0]);
-    response.findings = findings;
-    response.summary.finding_count = BigInt(findings.length);
-    response.investigation = {
-      ...response.investigation,
-      state: "none",
-      starting_point: null,
-      first_meaningful_divergence: { state: "none", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
-      context_finding_ids: findings.map((item) => item.finding_id),
-    };
-    response.findings.forEach((item) => { item.scope = "context_only"; });
+  it("renders none distinctly without inventing a change or navigation target", () => {
+    renderInsight(makeNone());
 
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    for (const label of [
-      "New error observed", "Error no longer observed", "Tool input changed", "Tool output changed", "Tool appeared", "Tool disappeared",
-      "Execution subtree appeared", "Execution subtree disappeared", "Tool repetition changed", "Model changed", "Request parameters changed", "Trace status changed",
-    ]) {
-      expect(screen.getByRole("heading", { name: label })).toBeTruthy();
-    }
+    expect(screen.getByText("None")).toBeTruthy();
+    expect(screen.getAllByText("No supported behavioral divergence was found in the available observations.")).toHaveLength(2);
+    expect(screen.getByText("No prior reliable structural match was available.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open left span" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open right span" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Full comparison" })).toBeTruthy();
   });
 
-  it("renders every frozen uncertainty reason with plain-language copy", () => {
-    const reasonCodes = [
-      "repeated_sibling_ambiguity", "missing_parent", "cycle", "invalid_structure", "ambiguous_parent",
-      "capture_unavailable", "redacted_observation", "incomplete_trace", "unsupported_observation",
-    ];
-    const response = baseResponse();
-    response.investigation = {
-      ...response.investigation,
-      state: "uncertain",
-      starting_point: null,
-      first_meaningful_divergence: { state: "uncertain", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
-      blocking_uncertainty_ids: reasonCodes.map((_, index) => `uncertainty-${index}`),
-    };
-    response.findings = [];
-    response.summary.finding_count = 0n;
-    response.summary.uncertainty_count = BigInt(reasonCodes.length);
-    response.uncertainties = reasonCodes.map((reason_code, index) => ({ uncertainty_id: `uncertainty-${index}`, coordinate: null, reason_code, side: "both" as const, blocks_earlier_claim: true, evidence: [] }));
+  it("distinguishes redacted and unavailable evidence without rendering hidden values", () => {
+    const response = baseResponse(finding({
+      observed: {
+        left: { state: "redacted", value: "secret-left" },
+        right: { state: "not_captured", value: "secret-right" },
+      },
+      evidence: [{ secret: "secret-evidence" }],
+    }));
+    renderInsight(response);
 
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    for (const label of [
-      "Repeated members are ambiguous", "A parent observation is missing", "The trace contains a structural cycle",
-      "The trace structure could not be resolved safely", "The parent location is ambiguous", "Captured content is unavailable on one side",
-      "The observation was redacted", "One trace ended before the observed execution was complete", "This observation type is not supported for a safe comparison",
-    ]) {
-      expect(screen.getByRole("heading", { name: label })).toBeTruthy();
-    }
+    expect(screen.getByText("Redacted; source value not shown")).toBeTruthy();
+    expect(screen.getByText("Unavailable; source value was not captured")).toBeTruthy();
+    expect(screen.queryByText("secret-left")).toBeNull();
+    expect(screen.queryByText("secret-right")).toBeNull();
+    expect(screen.queryByText("secret-evidence")).toBeNull();
   });
 
-  it("uses a safe generic label for an unknown uncertainty reason", () => {
-    const response = baseResponse();
-    response.investigation = {
-      ...response.investigation,
-      state: "uncertain",
-      starting_point: null,
-      first_meaningful_divergence: { state: "uncertain", ordering_basis: "structural_triage_order", finding_id: null, reason_code: null },
-      blocking_uncertainty_ids: ["uncertainty-future"],
-    };
-    response.uncertainties = [{ uncertainty_id: "uncertainty-future", coordinate: null, reason_code: "future_reason_code", side: "both", blocks_earlier_claim: true, evidence: [] }];
-    response.summary.uncertainty_count = 1n;
+  it("keeps hostile names and captured values inert text", () => {
+    const hostile = "<script>alert('xss')</script>";
+    const response = baseResponse(finding({
+      coordinate: coordinate(hostile),
+      observed: { left: { state: "captured", value: hostile }, right: { state: "captured", value: "safe" } },
+      evidence: [{ value: hostile }],
+    }));
+    const { container } = renderInsight(response);
 
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    expect(screen.getByRole("heading", { name: "TraceMotive could not safely resolve this observation" })).toBeTruthy();
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.textContent).toContain(hostile);
   });
 
-  it("uses explicit structural relationship labels for additional observations", () => {
-    const primary = finding();
-    const additional = [
-      finding({ finding_id: "finding-descendant", type: "tool_output_changed", coordinate: coordinate("Child"), relationships: [{ relation: "descendant" }] }),
-      finding({ finding_id: "finding-later", type: "new_error", coordinate: coordinate("Later"), relationships: [{ relation: "structurally_later_independent" }] }),
-      finding({ finding_id: "finding-branch", type: "tool_removed", coordinate: coordinate("Other branch"), relationships: [{ relation: "unrelated_branch" }] }),
-    ];
-    const response = addEvidence(baseResponse(primary), additional.map((item) => ({ finding_id: item.finding_id, relation: "observed_after", structural_relation: item.relationships[0].relation })), [primary, ...additional]);
-
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    expect(screen.getByText("Descendant observation")).toBeTruthy();
-    expect(screen.getByText("Structurally later independent observation")).toBeTruthy();
-    expect(screen.getByText("Unrelated branch observation")).toBeTruthy();
-  });
-
-  it("does not reinterpret an unknown structural relationship as a known one", () => {
-    const primary = finding();
-    const additional = finding({ finding_id: "finding-future", coordinate: coordinate("Future relation") });
-    const response = addEvidence(baseResponse(primary), [{ finding_id: additional.finding_id, relation: "observed_after", structural_relation: "future_relation_code" }], [primary, additional]);
-
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    expect(screen.getByText("Structural relationship not specified")).toBeTruthy();
-    expect(screen.queryByText("Additional observation")).toBeNull();
-  });
-
-  it("represents repetition changes as group-level evidence", () => {
-    const repetition = finding({
-      type: "tool_repetition_changed",
-      coordinate: coordinate("Repeated lookup", "sibling_group"),
-      field_path: null,
-      reason_code: "group_cardinality_changed",
-      observed: { left: { state: "captured", value: 1 }, right: { state: "captured", value: 3 } },
-    });
-    render(<ComparisonInsight response={baseResponse(repetition)} onOpenDetails={vi.fn()} detailsState="closed" />);
-
-    expect(screen.getByText("Group-level observation")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Tool repetition changed" })).toBeTruthy();
-    expect(screen.getAllByText("captured calls").length).toBe(2);
-  });
-
-  it("collapses large hostile values and renders them as inert text", () => {
+  it("keeps large hostile values collapsed and inert", () => {
     const hostile = "<script>alert(1)</script>" + "x".repeat(1000);
-    const large = finding({ observed: { left: { state: "captured", value: "small" }, right: { state: "captured", value: hostile } } });
-    const { container } = render(<ComparisonInsight response={baseResponse(large)} onOpenDetails={vi.fn()} detailsState="closed" />);
-    const disclosure = screen.getByText("Value: large value, expand to inspect");
+    const response = baseResponse(finding({
+      observed: { left: { state: "captured", value: "small" }, right: { state: "captured", value: hostile } },
+    }));
+    const { container } = renderInsight(response);
+    const disclosure = screen.getByText("Right: large value, expand to inspect");
     const details = disclosure.closest("details");
 
     expect(details).not.toBeNull();
@@ -307,19 +246,31 @@ describe("ComparisonInsight", () => {
     expect(details?.open).toBe(true);
   });
 
-  it("states when no prior reliable structural match is available", () => {
-    const response = baseResponse();
-    response.investigation.last_reliably_matched_point = { semantic_path: [], left: null, right: null, state: "none", reason: "no_prior_resolved_point" };
-    render(<ComparisonInsight response={response} onOpenDetails={vi.fn()} detailsState="closed" />);
+  it("omits actions for a group-level observation instead of forcing repeated-member identity", () => {
+    const group = finding({
+      coordinate: coordinate("Repeated lookup", "sibling_group"),
+      left: null,
+      right: null,
+      field_path: null,
+      type: "tool_repetition_changed",
+      observed: { left: { state: "captured", value: 2 }, right: { state: "captured", value: 3 } },
+    });
+    const response = baseResponse(group);
+    response.investigation.starting_point = { ...response.investigation.starting_point!, left: null, right: null, kind: "sibling_group" };
+    renderInsight(response);
 
-    expect(screen.getByText("No prior reliable structural match was available.")).toBeTruthy();
+    expect(screen.getByText("A repeated group changed; no individual member identity was inferred.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open left span" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open right span" })).toBeNull();
   });
 
-  it("keeps the full v0.2 detail action explicit and lazy", () => {
-    const onOpenDetails = vi.fn();
-    render(<ComparisonInsight response={baseResponse()} onOpenDetails={onOpenDetails} detailsState="closed" />);
+  it("provides a selectable local-hash fallback when clipboard access is denied", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    renderInsight(baseResponse());
 
-    fireEvent.click(screen.getByRole("button", { name: "View detailed comparison" }));
-    expect(onOpenDetails).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Copy local reference" }));
+    expect(await screen.findByText("Clipboard unavailable. Select the text below.")).toBeTruthy();
+    expect(screen.getByText(`#/compare/${leftTraceId}/${rightTraceId}`)).toBeTruthy();
+    expect(screen.queryByText(/https?:\/\//)).toBeNull();
   });
 });

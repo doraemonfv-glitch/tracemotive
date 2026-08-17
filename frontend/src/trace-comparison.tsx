@@ -410,7 +410,17 @@ function ComparisonError({ kind }: { kind: ComparisonErrorKind }) {
   return <section className={`state-message ${kind === "error" || kind === "too-large" ? "state-error" : ""}`} role={kind === "error" || kind === "too-large" ? "alert" : undefined}><p>{messages[kind]}</p></section>;
 }
 
-export function TraceComparison({ leftTraceId, rightTraceId, onBack }: { leftTraceId: string; rightTraceId: string; onBack: () => void }) {
+export function TraceComparison({
+  leftTraceId,
+  rightTraceId,
+  onBack,
+  onOpenSpan,
+}: {
+  leftTraceId: string;
+  rightTraceId: string;
+  onBack: () => void;
+  onOpenSpan?: (traceId: string, spanId: string) => void;
+}) {
   const [view, setView] = useState<ComparisonViewState>(() => leftTraceId === rightTraceId ? { kind: "same-trace" } : { kind: "loading" });
   const [detail, setDetail] = useState<DetailViewState>({ kind: "closed" });
   const requestIdentity = useRef(0);
@@ -491,7 +501,12 @@ export function TraceComparison({ leftTraceId, rightTraceId, onBack }: { leftTra
       {view.kind !== "loading" && view.kind !== "loaded" && <ComparisonError kind={view.kind} />}
       {view.kind === "loaded" && (
         <>
-          <ComparisonInsight response={view.response} onOpenDetails={openDetails} detailsState={detail.kind} />
+          <ComparisonInsight
+            response={view.response}
+            onOpenDetails={openDetails}
+            onOpenSpan={onOpenSpan}
+            detailsState={detail.kind}
+          />
           <ComparisonDetail state={detail} />
         </>
       )}

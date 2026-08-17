@@ -59,7 +59,7 @@ function inspectorStateForRender(
   return { kind: "loading", identity: selectedSpan };
 }
 
-export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () => void }) {
+export function TraceDetail({ traceId, spanId = null, onBack, backLabel = "Back to traces" }: { traceId: string; spanId?: string | null; onBack: () => void; backLabel?: string }) {
   const [detail, setDetail] = useState<DetailState>({ kind: "loading" });
   const [spans, setSpans] = useState<SpanState>({ kind: "loading" });
   const [selectedSpan, setSelectedSpan] = useState<SpanIdentity | null>(null);
@@ -78,8 +78,9 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
     const controller = new AbortController();
     const currentRequest = requestIdentity.current + 1;
     requestIdentity.current = currentRequest;
-    setSelectedSpan(null);
-    setInspector({ kind: "no-selection" });
+    const initialSelection = spanId === null ? null : { trace_id: traceId, span_id: spanId };
+    setSelectedSpan(initialSelection);
+    setInspector(initialSelection === null ? { kind: "no-selection" } : { kind: "loading", identity: initialSelection });
     setDetail({ kind: "loading" });
     setSpans({ kind: "loading" });
 
@@ -110,7 +111,7 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
     );
 
     return () => controller.abort();
-  }, [traceId]);
+  }, [spanId, traceId]);
 
   useEffect(() => {
     const currentRequest = inspectorRequestIdentity.current + 1;
@@ -145,9 +146,7 @@ export function TraceDetail({ traceId, onBack }: { traceId: string; onBack: () =
   return (
     <main className="trace-detail-page">
       <header className="detail-page-header">
-        <button type="button" className="back-button" onClick={onBack}>
-          Back to traces
-        </button>
+        <button type="button" className="back-button" onClick={onBack}>{backLabel}</button>
         <p className="eyebrow">TraceMotive / Trace detail</p>
         <h1>{detail.kind === "loaded" ? detail.response.trace.name : "Trace detail"}</h1>
         <code className="detail-trace-id">{traceId}</code>

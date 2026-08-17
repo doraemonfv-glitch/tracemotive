@@ -1,13 +1,11 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type {
   CanonicalJsonValue,
-  InvestigationCoordinate,
+  ComparisonSpanRef,
   InvestigationFinding,
   InvestigationFindingType,
   InvestigationSummaryView,
   InvestigationUncertainty,
-  InsightTraceIdentity,
-  LastReliablyMatchedPoint,
   TraceInsightResponse,
 } from "./types";
 
@@ -26,17 +24,9 @@ const FINDING_LABELS: Record<InvestigationFindingType, string> = {
   trace_status_changed: "Trace status changed",
 };
 
-const RELATION_LABELS: Record<string, string> = {
-  same_coordinate: "Same structural region",
-  descendant: "Descendant observation",
-  structurally_later_independent: "Structurally later independent observation",
-  unrelated_branch: "Unrelated branch observation",
-  additional_observation: "Additional observation",
-};
-
-const BARRIER_LABELS: Record<string, string> = {
+const UNCERTAINTY_LABELS: Record<string, string> = {
   repeated_sibling_ambiguity: "Repeated members are ambiguous",
-  capture_unavailable: "Captured content is unavailable on one side",
+  capture_unavailable: "Captured content is unavailable",
   redacted_observation: "The observation was redacted",
   missing_parent: "A parent observation is missing",
   invalid_structure: "The trace structure could not be resolved safely",
@@ -46,8 +36,18 @@ const BARRIER_LABELS: Record<string, string> = {
   unsupported_observation: "This observation type is not supported for a safe comparison",
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  input: "tool or span input",
+  output: "tool or span output",
+  error: "error evidence",
+  status: "status",
+  latency_ms: "duration",
+  "details.request_model": "request model",
+  "details.response_model": "response model",
+  "details.request_parameters": "request parameters",
+};
+
 const MAX_INLINE_VALUE_LENGTH = 900;
-const UNKNOWN_RELATION_LABEL = "Structural relationship not specified";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -70,44 +70,39 @@ function formatValue(value: unknown): string {
   }
 }
 
-function stateCopy(state: TraceInsightResponse["investigation"]["state"]): { title: string; description: string } {
-  switch (state) {
-    case "identified":
-      return {
-        title: "Investigation starting point",
-        description: "TraceMotive found an evidence-supported place to inspect first.",
-      };
-    case "uncertain":
-      return {
-        title: "No safe first investigation point",
-        description: "TraceMotive observed a limitation that prevents it from safely selecting the first investigation point.",
-      };
-    case "none":
-      return {
-        title: "No supported behavioral divergence found",
-        description: "TraceMotive did not find a supported behavioral difference in the available observations.",
-      };
-  }
-}
-
 function findingLabel(type: InvestigationFindingType): string {
   return FINDING_LABELS[type];
 }
 
-function barrierLabel(reasonCode: string): string {
-  return BARRIER_LABELS[reasonCode] ?? "TraceMotive could not safely resolve this observation";
+function uncertaintyLabel(reasonCode: string): string {
+  return UNCERTAINTY_LABELS[reasonCode] ?? "TraceMotive could not safely resolve this observation";
 }
 
-function pathLabel(coordinate: InvestigationCoordinate): string {
-  const segments = coordinate.semantic_path.map((segment) => `${segment.type} / ${segment.name}`);
-  if (coordinate.kind === "sibling_group" && coordinate.group_signature !== null) {
-    segments.push(`Repeated group / ${coordinate.group_signature.name}`);
+function stateLabel(state: InvestigationSummaryView["state"]): string {
+  return state[0].toUpperCase() + state.slice(1);
+}
+
+function pathLabel(finding: InvestigationFinding): string {
+  const segments = finding.coordinate.semantic_path.map((segment) => `${segment.type} / ${segment.name}`);
+  if (finding.coordinate.kind === "sibling_group" && finding.coordinate.group_signature !== null) {
+    segments.push(`Repeated group / ${finding.coordinate.group_signature.name}`);
   }
   return segments.join(" / ") || "Trace root";
 }
 
-function technicalPath(coordinate: InvestigationCoordinate): string {
-  return coordinate.semantic_path.map((segment) => `${segment.type}:${segment.name}[${segment.ordinal}]`).join(" / ") || "Trace root";
+function fieldLabel(fieldPath: string | null): string | null {
+  if (fieldPath === null) {
+    return null;
+  }
+  const normalized = fieldPath.replace(/^\/+/, "");
+  return FIELD_LABELS[normalized] ?? null;
+}
+
+function changedDescription(finding: InvestigationFinding): string {
+  const field = fieldLabel(finding.field_path);
+  return field === null
+    ? `${findingLabel(finding.type)} was observed at this structural location.`
+    : `Observed ${field} differs between the left and right trace.`;
 }
 
 function sideObserved(finding: InvestigationFinding, side: "left" | "right"): { state: string; value: CanonicalJsonValue | null } | null {
@@ -118,141 +113,138 @@ function sideObserved(finding: InvestigationFinding, side: "left" | "right"): { 
   return { state: value.state, value: ("value" in value ? value.value : null) as CanonicalJsonValue | null };
 }
 
-function observedStateLabel(state: string): string {
-  return state.replaceAll("_", " ");
+function observationLabel(observation: { state: string; value: CanonicalJsonValue | null } | null): string {
+  if (observation === null) {
+    return "Not observed";
+  }
+  switch (observation.state) {
+    case "captured":
+      return "Captured";
+    case "redacted":
+      return "Redacted; source value not shown";
+    case "not_captured":
+    case "unavailable":
+      return "Unavailable; source value was not captured";
+    default:
+      return observation.state.replaceAll("_", " ");
+  }
 }
 
-function EvidenceValue({ label, value }: { label: string; value: unknown }) {
+function targetText(target: ComparisonSpanRef): string {
+  return `${target.trace_id} / ${target.span_id}`;
+}
+
+function referenceHash(response: TraceInsightResponse): string {
+  return `#/compare/${encodeURIComponent(response.left_trace.trace_id)}/${encodeURIComponent(response.right_trace.trace_id)}`;
+}
+
+function limitationText(uncertainty: InvestigationUncertainty): string {
+  const side = uncertainty.side === "both" ? "both traces" : `the ${uncertainty.side} trace`;
+  return `${uncertaintyLabel(uncertainty.reason_code)} on ${side}.`;
+}
+
+function EvidenceValue({ label, value }: { label: string; value: CanonicalJsonValue | null }) {
   const formatted = useMemo(() => formatValue(value), [value]);
-  const large = formatted.length > MAX_INLINE_VALUE_LENGTH;
-  if (large) {
+  if (formatted.length > MAX_INLINE_VALUE_LENGTH) {
     return (
-      <details className="insight-value disclosure-value">
+      <details className="cockpit-value-disclosure">
         <summary>{label}: large value, expand to inspect</summary>
         <pre>{formatted}</pre>
       </details>
     );
   }
-  return (
-    <div className="insight-value">
-      <span className="insight-value-label">{label}</span>
-      <pre>{formatted}</pre>
-    </div>
-  );
+  return <pre aria-label={`${label} evidence`}>{formatted}</pre>;
 }
 
-function FindingObservation({ finding }: { finding: InvestigationFinding }) {
+function ObservationEvidence({ finding }: { finding: InvestigationFinding }) {
   const left = sideObserved(finding, "left");
   const right = sideObserved(finding, "right");
-  if (left === null && right === null) {
-    return <p className="insight-muted">The API supplied a group-level structural observation without an individual member pair.</p>;
-  }
-  const repetition = finding.type === "tool_repetition_changed";
   return (
-    <div className="insight-observation-grid" aria-label="Observed values">
-      <div className="insight-observation-side">
+    <div className="cockpit-observation-grid" aria-label="Observed evidence by side">
+      <div className="cockpit-observation-side">
         <span className="comparison-side-label">Left observation</span>
-        {left === null ? <p className="insight-muted">Not observed</p> : (
-          <>
-            <span className="insight-observation-state">{observedStateLabel(left.state)}{repetition ? " calls" : ""}</span>
-            <EvidenceValue label="Value" value={left.value} />
-          </>
-        )}
+        <strong>{observationLabel(left)}</strong>
+        {left?.state === "captured" && <EvidenceValue label="Left" value={left.value} />}
       </div>
-      <div className="insight-observation-side">
+      <div className="cockpit-observation-side">
         <span className="comparison-side-label">Right observation</span>
-        {right === null ? <p className="insight-muted">Not observed</p> : (
-          <>
-            <span className="insight-observation-state">{observedStateLabel(right.state)}{repetition ? " calls" : ""}</span>
-            <EvidenceValue label="Value" value={right.value} />
-          </>
-        )}
+        <strong>{observationLabel(right)}</strong>
+        {right?.state === "captured" && <EvidenceValue label="Right" value={right.value} />}
       </div>
     </div>
   );
 }
 
-function FindingDetails({ finding }: { finding: InvestigationFinding }) {
-  const formattedEvidence = useMemo(() => finding.evidence.map((item) => formatValue(item)), [finding.evidence]);
+function TargetLocation({ label, target }: { label: string; target: ComparisonSpanRef | null }) {
   return (
-    <details className="insight-technical-details">
-      <summary>Evidence and structural details</summary>
-      <dl className="insight-detail-list">
-        <div><dt>Finding ID</dt><dd><code>{finding.finding_id}</code></dd></div>
-        <div><dt>Field</dt><dd><code>{finding.field_path ?? "Structural observation"}</code></dd></div>
-        <div><dt>Reason</dt><dd><code>{finding.reason_code}</code></dd></div>
-        <div><dt>Structural path</dt><dd><code>{technicalPath(finding.coordinate)}</code></dd></div>
-      </dl>
-      {finding.evidence.length > 0 && (
-        <div className="insight-evidence-list">
-          <span className="comparison-side-label">Exact evidence observations</span>
-          {formattedEvidence.map((item, index) => (
-            <pre key={`${finding.finding_id}-evidence-${index}`}>{item}</pre>
-          ))}
-        </div>
-      )}
-    </details>
+    <div className="cockpit-target-location">
+      <span className="comparison-side-label">{label}</span>
+      {target === null ? <span>Not observed at an individual span</span> : <code>{targetText(target)}</code>}
+    </div>
   );
 }
 
-function FindingCard({ finding, relation, primary = false }: { finding: InvestigationFinding; relation?: string; primary?: boolean }) {
-  return (
-    <article className={`insight-finding-card ${primary ? "insight-finding-primary" : ""}`}>
-      <div className="insight-finding-heading">
-        <div>
-          <span className="insight-observation-badge">{finding.observation_state === "confirmed_observation" ? "Confirmed observation" : "Observation limited"}</span>
-          {relation !== undefined && <span className="insight-relation-badge">{RELATION_LABELS[relation] ?? UNKNOWN_RELATION_LABEL}</span>}
-          <h3>{findingLabel(finding.type)}</h3>
-          <p className="insight-path">{pathLabel(finding.coordinate)}</p>
-        </div>
-        {finding.scope === "context_only" && <span className="insight-context-badge">Observed context</span>}
-      </div>
-      <FindingObservation finding={finding} />
-      <FindingDetails finding={finding} />
-    </article>
-  );
-}
-
-function UncertaintyCard({ uncertainty, blocking }: { uncertainty: InvestigationUncertainty; blocking: boolean }) {
-  return (
-    <article className={`insight-uncertainty-card ${blocking ? "insight-uncertainty-blocking" : ""}`}>
-      <div className="insight-uncertainty-heading">
-        <span className="insight-uncertainty-badge">{blocking ? "Blocks first-point selection" : "Observed limitation"}</span>
-        <h3>{barrierLabel(uncertainty.reason_code)}</h3>
-      </div>
-      <p>{uncertainty.side === "both" ? "Both traces have" : `The ${uncertainty.side} trace has`} an observation limitation here.</p>
-      {uncertainty.coordinate !== null && <p className="insight-path">{pathLabel(uncertainty.coordinate)}</p>}
-      <details className="insight-technical-details">
-        <summary>Limitation details</summary>
-        <dl className="insight-detail-list">
-          <div><dt>Reason</dt><dd><code>{uncertainty.reason_code}</code></dd></div>
-          <div><dt>Uncertainty ID</dt><dd><code>{uncertainty.uncertainty_id}</code></dd></div>
-        </dl>
-        {uncertainty.evidence.length > 0 && <pre>{formatValue(uncertainty.evidence[0])}</pre>}
-      </details>
-    </article>
-  );
-}
-
-function LastMatched({ point }: { point: LastReliablyMatchedPoint }) {
+function LastMatchedEvidence({ point }: { point: InvestigationSummaryView["last_reliably_matched_point"] }) {
   if (point.state !== "matched") {
-    return <p className="insight-muted">No prior reliable structural match was available.</p>;
+    return <p className="cockpit-muted">No prior reliable structural match was available.</p>;
   }
-  const path = point.semantic_path.map((segment) => `${segment.type} / ${segment.name}`).join(" / ");
+  const path = point.semantic_path.map((segment) => `${segment.type} / ${segment.name}`).join(" / ") || "Trace root";
   return (
-    <div className="insight-last-matched">
+    <div className="cockpit-last-match">
       <span className="comparison-side-label">Last reliably matched point</span>
-      <strong>{path || "Trace root"}</strong>
+      <strong>{path}</strong>
       <p>Structural evidence only; this does not describe runtime chronology.</p>
     </div>
   );
 }
 
-function TracePair({ left, right }: { left: InsightTraceIdentity; right: InsightTraceIdentity }) {
+function FindingEvidenceDetails({ finding }: { finding: InvestigationFinding }) {
+  if (finding.evidence.length === 0) {
+    return null;
+  }
+  const observations = [sideObserved(finding, "left"), sideObserved(finding, "right")];
+  if (observations.some((observation) => observation?.state === "redacted" || observation?.state === "not_captured" || observation?.state === "unavailable")) {
+    return <p className="cockpit-muted">Detailed evidence records are not shown because captured content is redacted or unavailable.</p>;
+  }
   return (
-    <div className="insight-trace-pair">
-      <div><span className="comparison-side-label">Left</span><strong>{left.name}</strong><code>{left.trace_id}</code></div>
-      <div><span className="comparison-side-label">Right</span><strong>{right.name}</strong><code>{right.trace_id}</code></div>
+    <details className="cockpit-evidence-details">
+      <summary>Observed evidence records</summary>
+      <div className="cockpit-evidence-records">
+        {finding.evidence.map((item, index) => <pre key={`${finding.finding_id}-evidence-${index}`}>{formatValue(item)}</pre>)}
+      </div>
+    </details>
+  );
+}
+
+function CopyActions({ response, evidenceText }: { response: TraceInsightResponse; evidenceText: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "evidence-copied" | "reference-copied" | "failed">("idle");
+  const [fallbackText, setFallbackText] = useState("");
+
+  const copy = async (text: string, success: "evidence-copied" | "reference-copied") => {
+    try {
+      if (navigator.clipboard === undefined || typeof navigator.clipboard.writeText !== "function") {
+        throw new Error("clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(text);
+      setCopyState(success);
+    } catch {
+      setFallbackText(text);
+      setCopyState("failed");
+    }
+  };
+
+  return (
+    <div className="cockpit-secondary-actions">
+      <button type="button" className="secondary-button" onClick={() => void copy(evidenceText, "evidence-copied")}>Copy evidence</button>
+      <button type="button" className="secondary-button" onClick={() => void copy(referenceHash(response), "reference-copied")}>Copy local reference</button>
+      {copyState === "evidence-copied" && <span role="status">Evidence copied.</span>}
+      {copyState === "reference-copied" && <span role="status">Local reference copied.</span>}
+      {copyState === "failed" && (
+        <div className="cockpit-copy-fallback" role="status">
+          <span>Clipboard unavailable. Select the text below.</span>
+          <pre>{fallbackText}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -260,107 +252,127 @@ function TracePair({ left, right }: { left: InsightTraceIdentity; right: Insight
 export function ComparisonInsight({
   response,
   onOpenDetails,
+  onOpenSpan,
   detailsState,
 }: {
   response: TraceInsightResponse;
   onOpenDetails: () => void;
+  onOpenSpan?: (traceId: string, spanId: string) => void;
   detailsState: "closed" | "loading" | "loaded" | "not-found" | "invalid" | "too-large" | "error";
 }) {
   const { investigation } = response;
   const findingsById = new Map(response.findings.map((finding) => [finding.finding_id, finding]));
-  const primaryId = investigation.starting_point?.finding_id ?? null;
-  const primary = primaryId === null ? null : findingsById.get(primaryId) ?? null;
-  const additional = investigation.evidence_summary
-    .map((reference) => ({ reference, finding: findingsById.get(reference.finding_id) }))
-    .filter((item): item is { reference: typeof item.reference; finding: InvestigationFinding } => item.finding !== undefined);
-  const context = investigation.context_finding_ids
-    .map((findingId) => findingsById.get(findingId))
-    .filter((finding): finding is InvestigationFinding => finding !== undefined);
-  const blockingIds = new Set(investigation.blocking_uncertainty_ids);
-  const orderedUncertainties = [...response.uncertainties].sort((left, right) => Number(blockingIds.has(right.uncertainty_id)) - Number(blockingIds.has(left.uncertainty_id)));
-  const copy = stateCopy(investigation.state);
+  const primary = investigation.starting_point === null ? null : findingsById.get(investigation.starting_point.finding_id) ?? null;
+  const evidenceFinding = primary ?? investigation.evidence_summary
+    .map((reference) => findingsById.get(reference.finding_id))
+    .find((finding): finding is InvestigationFinding => finding !== undefined) ?? null;
+  const uncertaintyById = new Map(response.uncertainties.map((uncertainty) => [uncertainty.uncertainty_id, uncertainty]));
+  const limitationIds = [...new Set([
+    ...investigation.limitations.map((limitation) => limitation.uncertainty_id),
+    ...investigation.blocking_uncertainty_ids,
+  ])];
+  const limitations = limitationIds
+    .map((uncertaintyId) => uncertaintyById.get(uncertaintyId))
+    .filter((uncertainty): uncertainty is InvestigationUncertainty => uncertainty !== undefined);
+  const evidenceText = [
+    `State: ${stateLabel(investigation.state)}`,
+    evidenceFinding === null ? "What changed: No supported behavioral divergence was selected." : `What changed: ${changedDescription(evidenceFinding)}`,
+    evidenceFinding === null ? "" : `Left: ${observationLabel(sideObserved(evidenceFinding, "left"))}`,
+    evidenceFinding === null ? "" : `Right: ${observationLabel(sideObserved(evidenceFinding, "right"))}`,
+  ].filter((line) => line.length > 0).join("\n");
+
+  const openTarget = (target: ComparisonSpanRef | null) => {
+    if (target !== null) {
+      onOpenSpan?.(target.trace_id, target.span_id);
+    }
+  };
 
   return (
-    <section className="comparison-insight" aria-label="Investigation insight">
-      <div className={`insight-state-panel insight-state-${investigation.state}`}>
-        <div>
-          <p className="eyebrow">Investigation status</p>
-          <span className="insight-state-badge">{investigation.state === "identified" ? "Confirmed observation" : investigation.state === "uncertain" ? "Observed limitation" : "No supported divergence"}</span>
-          <h2>{copy.title}</h2>
-          <p>{copy.description}</p>
+    <article className={`comparison-insight cockpit-state-${investigation.state}`} aria-label="Investigation cockpit">
+      <section className="cockpit-section" aria-labelledby="cockpit-look-here-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Investigation</p>
+            <h2 id="cockpit-look-here-heading">Look here</h2>
+          </div>
+          <span className={`cockpit-state-badge cockpit-state-badge-${investigation.state}`}>{stateLabel(investigation.state)}</span>
         </div>
-        <TracePair left={response.left_trace} right={response.right_trace} />
-      </div>
-
-      <p className="insight-order-note">“First” means deterministic structural triage order, not runtime chronology or causality.</p>
-
-      {investigation.state === "identified" && primary !== null && investigation.starting_point !== null && (
-        <section className="insight-primary-section" aria-label="Investigation starting point">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Where to begin</p>
-              <h2>Investigation starting point</h2>
-            </div>
-            <span className="insight-structural-label">{investigation.starting_point.kind === "sibling_group" ? "Group-level observation" : "Unique structural location"}</span>
-          </div>
-          <FindingCard finding={primary} primary />
-          <p className="insight-epistemic-disclaimer">TraceMotive observed this difference and selected it as the first supported place to investigate. TraceMotive does not know whether the difference caused later behavior.</p>
-          <LastMatched point={investigation.last_reliably_matched_point} />
-        </section>
-      )}
-
-      {investigation.state === "uncertain" && orderedUncertainties.length > 0 && (
-        <section className="insight-uncertainty-section" aria-label="Blocking uncertainty">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">What remains uncertain</p>
-              <h2>TraceMotive cannot safely choose the first point</h2>
+        {investigation.state === "identified" && primary !== null && investigation.starting_point !== null ? (
+          <div className="cockpit-primary-card">
+            <h3>{findingLabel(primary.type)}</h3>
+            <p className="cockpit-path">{pathLabel(primary)}</p>
+            <p>{investigation.starting_point.kind === "sibling_group" ? "A repeated group changed; no individual member identity was inferred." : "This is the supported structural place to inspect first."}</p>
+            <div className="cockpit-target-grid">
+              <TargetLocation label="Left span" target={investigation.starting_point.left} />
+              <TargetLocation label="Right span" target={investigation.starting_point.right} />
             </div>
           </div>
-          <div className="insight-uncertainty-list">
-            {orderedUncertainties.map((uncertainty) => <UncertaintyCard key={uncertainty.uncertainty_id} uncertainty={uncertainty} blocking={blockingIds.has(uncertainty.uncertainty_id)} />)}
+        ) : investigation.state === "uncertain" ? (
+          <div className="cockpit-primary-card">
+            <h3>No supported starting point</h3>
+            <p>TraceMotive observed a limitation that prevents it from safely selecting the first place to inspect.</p>
+            {limitations.length > 0 && <ul className="cockpit-limitation-list">{limitations.map((uncertainty) => <li key={uncertainty.uncertainty_id}>{limitationText(uncertainty)}</li>)}</ul>}
           </div>
-        </section>
-      )}
-
-      {investigation.state === "uncertain" && additional.length > 0 && (
-        <section className="insight-additional-section" aria-label="Additional observed behavioral findings">
-          <div className="section-heading"><div><p className="eyebrow">Observed after the limitation</p><h2>Additional behavioral observations</h2></div></div>
-          <p className="insight-section-note">These findings remain visible, but none is promoted to a starting point.</p>
-          <div className="insight-finding-list">{additional.map(({ reference, finding }) => <FindingCard key={finding.finding_id} finding={finding} relation={reference.structural_relation} />)}</div>
-        </section>
-      )}
-
-      {investigation.state === "identified" && additional.length > 0 && (
-        <section className="insight-additional-section" aria-label="Additional observed behavioral findings">
-          <div className="section-heading"><div><p className="eyebrow">What else was observed</p><h2>Additional behavioral observations</h2></div></div>
-          <div className="insight-finding-list">{additional.map(({ reference, finding }) => <FindingCard key={finding.finding_id} finding={finding} relation={reference.structural_relation} />)}</div>
-        </section>
-      )}
-
-      {investigation.state === "none" && context.length === 0 && response.uncertainties.length === 0 && (
-        <LastMatched point={investigation.last_reliably_matched_point} />
-      )}
-
-      {context.length > 0 && (
-        <section className="insight-context-section" aria-label="Observed context changes">
-          <div className="section-heading"><div><p className="eyebrow">Observed context</p><h2>Context changes</h2></div></div>
-          <p className="insight-section-note">These observations provide context. They are not behavioral divergence or an investigation starting point.</p>
-          <div className="insight-finding-list">{context.map((finding) => <FindingCard key={finding.finding_id} finding={finding} />)}</div>
-        </section>
-      )}
-
-      {investigation.state !== "uncertain" && orderedUncertainties.length > 0 && (
-        <section className="insight-uncertainty-section" aria-label="Observed uncertainty">
-          <div className="section-heading"><div><p className="eyebrow">What remains uncertain</p><h2>Limitations in the available observations</h2></div></div>
-          <div className="insight-uncertainty-list">{orderedUncertainties.map((uncertainty) => <UncertaintyCard key={uncertainty.uncertainty_id} uncertainty={uncertainty} blocking={blockingIds.has(uncertainty.uncertainty_id)} />)}</div>
-        </section>
-      )}
-
-      <section className="insight-detail-action" aria-label="Detailed comparison">
-        <div><p className="eyebrow">Evidence details</p><h2>Need the full structural comparison?</h2><p>Open the existing v0.2 detail view for all alignment records and Changed only filtering.</p></div>
-        {detailsState === "loaded" ? <span className="insight-detail-open">Detailed comparison loaded below</span> : <button type="button" className="primary-button" onClick={onOpenDetails} disabled={detailsState === "loading"}>{detailsState === "loading" ? "Loading detailed comparison…" : "View detailed comparison"}</button>}
+        ) : (
+          <div className="cockpit-primary-card">
+            <h3>No supported starting point</h3>
+            <p>No supported behavioral divergence was found in the available observations.</p>
+          </div>
+        )}
+        <p className="cockpit-order-note">The starting point follows deterministic structural triage order, not runtime chronology.</p>
       </section>
-    </section>
+
+      <section className="cockpit-section" aria-labelledby="cockpit-what-changed-heading">
+        <div className="section-heading"><div><h2 id="cockpit-what-changed-heading">What changed</h2></div></div>
+        {primary !== null && investigation.state === "identified" ? (
+          <div className="cockpit-change-summary">
+            <strong>{findingLabel(primary.type)}</strong>
+            <p>{changedDescription(primary)}</p>
+          </div>
+        ) : investigation.state === "uncertain" && evidenceFinding !== null ? (
+          <div className="cockpit-change-summary"><p>Other observed difference: <strong>{findingLabel(evidenceFinding.type)}</strong>. It was not promoted to a starting point.</p></div>
+        ) : (
+          <div className="cockpit-change-summary"><p>No supported behavioral divergence was found in the available observations.</p></div>
+        )}
+      </section>
+
+      <section className="cockpit-section" aria-labelledby="cockpit-evidence-heading">
+        <div className="section-heading"><div><h2 id="cockpit-evidence-heading">Evidence</h2></div></div>
+        {evidenceFinding !== null && <ObservationEvidence finding={evidenceFinding} />}
+        {evidenceFinding !== null && <FindingEvidenceDetails finding={evidenceFinding} />}
+        {limitations.length > 0 && (
+          <ul className="cockpit-evidence-limitations">
+            {limitations.map((uncertainty) => <li key={uncertainty.uncertainty_id}>{limitationText(uncertainty)}</li>)}
+          </ul>
+        )}
+        {evidenceFinding === null && limitations.length === 0 && <p className="cockpit-muted">No additional evidence was available for this result.</p>}
+        <LastMatchedEvidence point={investigation.last_reliably_matched_point} />
+        <CopyActions response={response} evidenceText={evidenceText} />
+      </section>
+
+      <section className="cockpit-section" aria-labelledby="cockpit-next-heading">
+        <div className="section-heading"><div><h2 id="cockpit-next-heading">Next</h2></div></div>
+        <div className="cockpit-primary-actions">
+          {investigation.state === "identified" && investigation.starting_point?.left !== null && investigation.starting_point?.left !== undefined && (
+            <button type="button" className="primary-button" onClick={() => openTarget(investigation.starting_point!.left)}>Open left span</button>
+          )}
+          {investigation.state === "identified" && investigation.starting_point?.right !== null && investigation.starting_point?.right !== undefined && (
+            <button type="button" className="primary-button" onClick={() => openTarget(investigation.starting_point!.right)}>Open right span</button>
+          )}
+          <button type="button" className="primary-button" onClick={onOpenDetails} disabled={detailsState === "loading"} aria-busy={detailsState === "loading"}>
+            Full comparison
+          </button>
+        </div>
+        {detailsState === "loaded" && <p className="cockpit-muted" role="status">Full comparison is shown below.</p>}
+      </section>
+
+      <section className="cockpit-section" aria-labelledby="cockpit-unknown-heading">
+        <div className="section-heading"><div><h2 id="cockpit-unknown-heading">What TraceMotive does not know</h2></div></div>
+        <p>This observed divergence is not proof of cause.</p>
+        {investigation.state === "identified" && <p>TraceMotive does not know why the traces differ or whether this observation affected later behavior.</p>}
+        {investigation.state === "uncertain" && <p>TraceMotive does not know a safe first investigation point because the available evidence is limited.</p>}
+        {investigation.state === "none" && <p>TraceMotive does not know of a supported behavioral divergence in the available observations.</p>}
+      </section>
+    </article>
   );
 }
