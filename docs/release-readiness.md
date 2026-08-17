@@ -1,14 +1,30 @@
-# TraceMotive v0.4.0 Core release readiness
+# TraceMotive v0.4.1 Core release readiness
 
 This checklist is local-only. These commands build and inspect artifacts; they
 do not upload, publish, create a release, push a tag, or create a GitHub
 Release.
 
 The Python distribution and import package are both `tracemotive`, with
-package version `0.4.0`. The Canonical schema remains `0.1`, the ingest
+package version `0.4.1`. The Canonical schema remains `0.1`, the ingest
 protocol remains `1`, `/api/v1`, `/api/v2`, and `/api/v3` are preserved, and
-the additive structured-diff comparison contract is `/api/v4`. LangGraph is
-deferred to v0.4.1 and is not part of the v0.4.0 support claim.
+the additive structured-diff comparison contract is `/api/v4`. LangGraph
+remains deferred and is not part of the v0.4.1 support claim.
+
+## v0.4.1 release notes
+
+### Fixed
+
+- Corrected structured-diff truncation semantics.
+- `max_depth` now skips only the bounded subtree so later in-bound siblings
+  remain visible.
+- Global node, record, and value budgets stop the remaining walk
+  deterministically.
+
+### Clarify
+
+- No API contract changes.
+- No new features.
+- No Canonical or ingest changes.
 
 ## v0.4.0 release notes
 

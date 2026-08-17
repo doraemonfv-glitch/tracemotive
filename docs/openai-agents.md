@@ -1,6 +1,6 @@
 # OpenAI Agents SDK integration
 
-TraceMotive v0.4.0 supports the OpenAI Agents SDK range `>=0.17,<0.18`. The
+TraceMotive v0.4.1 supports the OpenAI Agents SDK range `>=0.17,<0.18`. The
 package extra is optional; core `import tracemotive` does not import or require
 the `agents` package. The range was compatibility-tested at 0.17.0, 0.17.4,
 and 0.17.8 for the adapter callbacks, span-data fields, processor registration

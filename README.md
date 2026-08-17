@@ -134,7 +134,7 @@ See the [OpenAI Agents integration notes](docs/openai-agents.md) and the
 
 ## Install a released package
 
-The current release candidate distribution metadata is `0.4.0`; this checkout
+The current release candidate distribution metadata is `0.4.1`; this checkout
 is prepared for release but has not been published. For a normal installation:
 
 ```text
@@ -250,7 +250,7 @@ The repository intentionally keeps these layers separate:
 |---|---|
 | `spec/v0.1-frozen-spec.md` | Historical Frozen compatibility contract for Canonical schema, ingest, privacy, transport, and v1 behavior. It remains authoritative and unchanged. |
 | `spec/v0.2-proposed-spec.md` and `spec/v0.3-proposed-spec.md` | Historical proposed design documents; they are not permission to rewrite the v0.1 contract. |
-| Package metadata | `0.4.0` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
+| Package metadata | `0.4.1` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
 | Canonical and ingest | Canonical schema `0.1`; ingest protocol `1`. |
 | Query APIs | `/api/v1`, `/api/v2`, and `/api/v3` remain compatibility surfaces. `/api/v4/compare/{left}/{right}` is the additive v0.4 structured-diff projection. |
 | `docs/v0.4/` | Frozen-for-implementation v0.4 design and release requirements; it is not itself a package-version or release declaration. |

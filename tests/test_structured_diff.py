@@ -105,6 +105,58 @@ class StructuredDiffTests(unittest.TestCase):
         self.assertEqual(MAX_STRUCTURED_DIFF_NODES, 4096)
         self.assertEqual(MAX_STRUCTURED_DIFF_RECORDS, 256)
 
+    def test_depth_bound_keeps_later_in_bound_sibling_changes(self) -> None:
+        # Keys are compared in reverse sorted order, so "a" is expanded first.
+        # A too-deep subtree must not prevent later in-bound siblings from
+        # emitting the records collected before the bound.
+        result = structured_diff(
+            {"a": {"b": {"c": 1}}, "d": "left"},
+            {"a": {"b": {"c": 2}}, "d": "right"},
+            max_depth=2,
+        )
+
+        self.assertTrue(result.truncated)
+        self.assertEqual(result.reason, "max_depth")
+        self.assertEqual(
+            [(item["op"], item["path"], item["left"]["value"], item["right"]["value"]) for item in result.records],
+            [("replace", "/d", "left", "right")],
+        )
+
+    def test_node_and_output_bounds_stop_the_remaining_walk(self) -> None:
+        # max_nodes is a global visited-node budget. After it is exhausted,
+        # later unvisited siblings are omitted from the projection.
+        nodes = structured_diff(
+            {"z": {str(index): index for index in range(10)}, "a": "left"},
+            {"z": {str(index): index + 1 for index in range(10)}, "a": "right"},
+            max_nodes=3,
+        )
+        self.assertTrue(nodes.truncated)
+        self.assertEqual(nodes.reason, "max_nodes")
+        self.assertEqual([item["path"] for item in nodes.records], ["/a"])
+
+        # max_records is a global output budget. Once the cap is reached, no
+        # further change records are emitted.
+        records = structured_diff(
+            {"z": 1, "m": 2, "a": 3},
+            {"z": 9, "m": 8, "a": 7},
+            max_records=1,
+        )
+        self.assertTrue(records.truncated)
+        self.assertEqual(records.reason, "max_change_records")
+        self.assertEqual([item["path"] for item in records.records], ["/a"])
+
+        # Keys are compared in reverse sorted order, so "z" is visited first.
+        # After an oversized record is omitted, a later otherwise-valid small
+        # sibling must not be emitted.
+        oversized = structured_diff(
+            {"z": "x" * 200, "a": "left"},
+            {"z": "y" * 200, "a": "right"},
+            max_value_bytes=80,
+        )
+        self.assertTrue(oversized.truncated)
+        self.assertEqual(oversized.reason, "max_value_bytes")
+        self.assertEqual(oversized.records, ())
+
     def test_large_values_have_an_explicit_value_bound(self) -> None:
         result = structured_diff({"blob": "x"}, {"blob": "x" * 1000}, max_value_bytes=128)
         self.assertTrue(result.truncated)

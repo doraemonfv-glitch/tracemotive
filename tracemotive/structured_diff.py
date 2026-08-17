@@ -147,10 +147,10 @@ def structured_diff(
         left_value: Any,
         right_value: Any,
         reason: str | None = None,
-    ) -> None:
+    ) -> bool:
         if len(records) >= max_records:
             truncate("max_change_records")
-            return
+            return False
         record = {
             "op": op,
             "path": _pointer(path),
@@ -160,24 +160,27 @@ def structured_diff(
         }
         if _record_size(record) > max_value_bytes:
             truncate("max_value_bytes")
-            return
+            return False
         records.append(record)
+        return True
 
-    while stack and not truncated:
+    while stack:
         path, left_value, right_value = stack.pop()
         if len(path) > max_depth:
             truncate("max_depth")
-            break
+            continue
         if visited_nodes >= max_nodes:
             truncate("max_nodes")
             break
         visited_nodes += 1
 
         if left_value is _MISSING:
-            add_record(path, "add", left_value, right_value)
+            if not add_record(path, "add", left_value, right_value):
+                break
             continue
         if right_value is _MISSING:
-            add_record(path, "remove", left_value, right_value)
+            if not add_record(path, "remove", left_value, right_value):
+                break
             continue
 
         left_is_dict = type(left_value) is dict
@@ -215,20 +218,23 @@ def structured_diff(
                         )
                     )
             elif not _canonical_equal(left_value, right_value):
-                add_record(
+                if not add_record(
                     path,
                     "replace",
                     left_value,
                     right_value,
-                )
+                ):
+                    break
             continue
 
         if left_is_dict or right_is_dict or left_is_list or right_is_list:
-            add_record(path, "replace", left_value, right_value)
+            if not add_record(path, "replace", left_value, right_value):
+                break
             continue
 
         if not _same_scalar(left_value, right_value):
-            add_record(path, "replace", left_value, right_value)
+            if not add_record(path, "replace", left_value, right_value):
+                break
 
     return StructuredDiffResult(tuple(records), truncated, truncation_reason)
 
