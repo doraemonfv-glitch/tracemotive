@@ -339,6 +339,10 @@ code { color: #5b657a; display: block; font-size: 0.74rem; margin-top: 4px; over
 .cockpit-secondary-actions > span { color: #17633a; font-size: 0.8rem; font-weight: 700; }
 .cockpit-copy-fallback { display: grid; gap: 7px; flex-basis: 100%; }
 .cockpit-copy-fallback span { color: #735500; font-size: 0.8rem; }
+.cockpit-structured-diff { display: grid; gap: 9px; margin-top: 14px; }
+.cockpit-structured-diff-record { align-items: baseline; background: #f7f9fc; border: 1px solid #e0e5ee; border-radius: 7px; display: grid; gap: 6px 10px; grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 2fr); padding: 10px; }
+.cockpit-structured-diff-record code, .cockpit-structured-diff-record span { overflow-wrap: anywhere; }
+.cockpit-structured-diff-record small { color: #566176; grid-column: 1 / -1; }
 .comparison-detail-section { border-top: 2px solid #dce1ea; margin-top: 8px; padding-top: 26px; }
 .comparison-detail-loading { margin-top: 8px; }
 .comparison-detail-error { margin-top: 8px; }

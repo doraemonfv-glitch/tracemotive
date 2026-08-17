@@ -316,6 +316,65 @@ export interface InvestigationFinding {
   observed: CanonicalJsonObject;
   evidence: CanonicalJsonObject[];
   relationships: Array<{ relation: string; structural_relation?: string }>;
+  structured_diff_available?: boolean;
+  structured_diff?: StructuredDiffRecord[];
+  structured_diff_truncated?: boolean;
+  structured_diff_reason?: string | null;
+}
+
+export interface StructuredDiffObservation {
+  state: "present" | "absent" | "unavailable" | "redacted";
+  value?: CanonicalJsonValue | null;
+}
+
+export interface StructuredDiffRecord {
+  op: "add" | "remove" | "replace";
+  path: string;
+  left: StructuredDiffObservation;
+  right: StructuredDiffObservation;
+  reason: string | null;
+}
+
+export interface V4Action {
+  type: "open_left" | "open_right" | "full_comparison" | "copy_evidence" | "copy_local_reference";
+  target: ComparisonSpanRef | { hash: string } | { finding_id: string };
+}
+
+export interface TraceInsightV4Response {
+  comparison_version: "0.4";
+  left: InsightTraceIdentity;
+  right: InsightTraceIdentity;
+  summary: {
+    alignment_state: "complete" | "uncertain";
+    investigation_state: InvestigationState;
+    last_reliably_matched_point: LastReliablyMatchedPoint;
+  };
+  investigation: {
+    primary_finding_id: string | null;
+    finding_ids: string[];
+    uncertainty_ids: string[];
+    actions: V4Action[];
+  };
+  findings: Array<{
+    id: string;
+    type: InvestigationFindingType;
+    coordinate: InvestigationCoordinate;
+    left: ComparisonSpanRef | null;
+    right: ComparisonSpanRef | null;
+    scope: InvestigationFindingScope;
+    observation_state: InvestigationObservationState;
+    reason_code: string;
+    field_path: string | null;
+    observed: CanonicalJsonObject;
+    evidence: CanonicalJsonObject[];
+    structured_diff_available: boolean;
+    structured_diff?: StructuredDiffRecord[];
+    structured_diff_truncated?: boolean;
+    structured_diff_reason: string | null;
+    relationships: { supports: unknown[]; limited_by: unknown[] };
+    actions: V4Action[];
+  }>;
+  uncertainties: InvestigationUncertainty[];
 }
 
 export interface InvestigationUncertainty {

@@ -24,6 +24,8 @@ import type {
   ComparisonTraceField,
   ComparisonTraceView,
   ComparisonUnavailableSpan,
+  StructuredDiffObservation,
+  StructuredDiffRecord,
   InvestigationCoordinate,
   InvestigationEvidenceReference,
   InvestigationFinding,
@@ -37,6 +39,8 @@ import type {
   TraceDetailResponse,
   TraceHeader,
   TraceInsightResponse,
+  TraceInsightV4Response,
+  V4Action,
   TraceListFilters,
   TraceListResponse,
   TraceStats,
@@ -1134,6 +1138,225 @@ export function decodeInsightComparisonResponse(text: string, leftTraceId: strin
   };
 }
 
+function decodeStructuredDiffObservation(value: unknown): StructuredDiffObservation | undefined {
+  if (!isRecord(value) || (value.state !== "present" && value.state !== "absent" && value.state !== "unavailable" && value.state !== "redacted")) {
+    return undefined;
+  }
+  if (value.state === "present" && !Object.prototype.hasOwnProperty.call(value, "value")) {
+    return undefined;
+  }
+  if ((value.state === "unavailable" || value.state === "redacted") && Object.prototype.hasOwnProperty.call(value, "value")) {
+    return undefined;
+  }
+  return {
+    state: value.state,
+    ...(Object.prototype.hasOwnProperty.call(value, "value") ? { value: value.value as StructuredDiffObservation["value"] } : {}),
+  };
+}
+
+function decodeStructuredDiff(value: unknown): StructuredDiffRecord | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["op", "path", "left", "right", "reason"]) || (value.op !== "add" && value.op !== "remove" && value.op !== "replace") || typeof value.path !== "string" || (value.path !== "" && !value.path.startsWith("/")) || (typeof value.reason !== "string" && value.reason !== null)) {
+    return undefined;
+  }
+  const left = decodeStructuredDiffObservation(value.left);
+  const right = decodeStructuredDiffObservation(value.right);
+  return left === undefined || right === undefined ? undefined : {
+    op: value.op,
+    path: value.path,
+    left,
+    right,
+    reason: value.reason,
+  };
+}
+
+function decodeV4Action(value: unknown): V4Action | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["type", "target"])) {
+    return undefined;
+  }
+  if (value.type === "open_left" || value.type === "open_right") {
+    const target = decodeComparisonRef(value.target);
+    return target === undefined ? undefined : { type: value.type, target };
+  }
+  if (value.type === "full_comparison" || value.type === "copy_local_reference") {
+    if (!isRecord(value.target) || !hasExactKeys(value.target, ["hash"]) || typeof value.target.hash !== "string" || !value.target.hash.startsWith("#/compare/")) {
+      return undefined;
+    }
+    return { type: value.type, target: { hash: value.target.hash } };
+  }
+  if (value.type === "copy_evidence") {
+    if (!isRecord(value.target) || !hasExactKeys(value.target, ["finding_id"]) || typeof value.target.finding_id !== "string") {
+      return undefined;
+    }
+    return { type: value.type, target: { finding_id: value.target.finding_id } };
+  }
+  return undefined;
+}
+
+function decodeV4LastReliablyMatchedPoint(value: unknown): InvestigationSummaryView["last_reliably_matched_point"] | undefined {
+  if (!isRecord(value) || !hasExactKeys(value, ["state", "left", "right", "coordinate", "reason"])) {
+    return undefined;
+  }
+  const semanticPath = decodeComparisonPath(value.coordinate);
+  const left = decodeInsightRef(value.left);
+  const right = decodeInsightRef(value.right);
+  if (semanticPath === undefined || left === undefined || right === undefined || (value.state !== "none" && value.state !== "matched") || typeof value.reason !== "string") {
+    return undefined;
+  }
+  return { semantic_path: semanticPath, left, right, state: value.state, reason: value.reason };
+}
+
+function decodeV4Finding(value: unknown): TraceInsightV4Response["findings"][number] | undefined {
+  const requiredKeys = [
+    "id", "type", "coordinate", "left", "right", "scope", "observation_state",
+    "reason_code", "field_path", "observed", "evidence", "structured_diff_available",
+    "structured_diff_reason", "relationships", "actions",
+  ] as const;
+  if (!isRecord(value) || !requiredKeys.every((key) => Object.prototype.hasOwnProperty.call(value, key))) {
+    return undefined;
+  }
+  const coordinate = decodeInsightCoordinate(value.coordinate);
+  const left = decodeInsightRef(value.left);
+  const right = decodeInsightRef(value.right);
+  const observed = decodeCanonicalObject(value.observed);
+  const evidence = decodeCanonicalObjectArray(value.evidence);
+  const relationships = isRecord(value.relationships) && Array.isArray(value.relationships.supports) && Array.isArray(value.relationships.limited_by) ? { supports: value.relationships.supports, limited_by: value.relationships.limited_by } : undefined;
+  const actions = Array.isArray(value.actions) ? value.actions.map(decodeV4Action) : undefined;
+  const structuredDiff = Array.isArray(value.structured_diff) ? value.structured_diff.map(decodeStructuredDiff) : undefined;
+  const hasTruncated = Object.prototype.hasOwnProperty.call(value, "structured_diff_truncated");
+  if (
+    typeof value.id !== "string" ||
+    !INVESTIGATION_FINDING_TYPES.includes(value.type as InvestigationFindingType) ||
+    coordinate === undefined ||
+    left === undefined ||
+    right === undefined ||
+    (typeof value.field_path !== "string" && value.field_path !== null) ||
+    (value.scope !== "behavioral" && value.scope !== "context_only") ||
+    (value.observation_state !== "confirmed_observation" && value.observation_state !== "observation_limited") ||
+    typeof value.reason_code !== "string" ||
+    observed === undefined ||
+    evidence === undefined ||
+    typeof value.structured_diff_available !== "boolean" ||
+    (typeof value.structured_diff_reason !== "string" && value.structured_diff_reason !== null) ||
+    relationships === undefined ||
+    actions === undefined ||
+    actions.some((item) => item === undefined) ||
+    (value.structured_diff_available && (structuredDiff === undefined || structuredDiff.some((item) => item === undefined) || !hasTruncated || typeof value.structured_diff_truncated !== "boolean")) ||
+    (!value.structured_diff_available && (structuredDiff !== undefined || hasTruncated))
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    type: value.type as InvestigationFindingType,
+    coordinate,
+    left,
+    right,
+    scope: value.scope,
+    observation_state: value.observation_state,
+    reason_code: value.reason_code,
+    field_path: value.field_path,
+    observed,
+    evidence,
+    structured_diff_available: value.structured_diff_available,
+    ...(structuredDiff !== undefined ? { structured_diff: structuredDiff as StructuredDiffRecord[] } : {}),
+    ...(hasTruncated ? { structured_diff_truncated: value.structured_diff_truncated as boolean } : {}),
+    structured_diff_reason: value.structured_diff_reason,
+    relationships,
+    actions: actions as V4Action[],
+  };
+}
+
+export function decodeV4ComparisonResponse(text: string, leftTraceId: string, rightTraceId: string): TraceInsightV4Response {
+  const value: unknown = parse(text);
+  if (!isRecord(value) || !hasExactKeys(value, ["comparison_version", "left", "right", "summary", "investigation", "findings", "uncertainties"]) || value.comparison_version !== "0.4") {
+    throw new Error("Trace v4 comparison response was invalid");
+  }
+  const left = decodeInsightTraceIdentity(value.left, leftTraceId);
+  const right = decodeInsightTraceIdentity(value.right, rightTraceId);
+  const summary = isRecord(value.summary) && hasExactKeys(value.summary, ["alignment_state", "investigation_state", "last_reliably_matched_point"]) ? value.summary : undefined;
+  const lastPoint = summary === undefined ? undefined : decodeV4LastReliablyMatchedPoint(summary.last_reliably_matched_point);
+  const investigation = isRecord(value.investigation) && hasExactKeys(value.investigation, ["primary_finding_id", "finding_ids", "uncertainty_ids", "actions"]) ? value.investigation : undefined;
+  const findings = Array.isArray(value.findings) ? value.findings.map(decodeV4Finding) : undefined;
+  const uncertainties = Array.isArray(value.uncertainties) ? value.uncertainties.map(decodeInsightUncertainty) : undefined;
+  const findingIds = investigation === undefined || !Array.isArray(investigation.finding_ids) || investigation.finding_ids.some((item) => typeof item !== "string") ? undefined : investigation.finding_ids;
+  const uncertaintyIds = investigation === undefined || !Array.isArray(investigation.uncertainty_ids) || investigation.uncertainty_ids.some((item) => typeof item !== "string") ? undefined : investigation.uncertainty_ids;
+  const actions = investigation === undefined || !Array.isArray(investigation.actions) ? undefined : investigation.actions.map(decodeV4Action);
+  if (
+    left === undefined ||
+    right === undefined ||
+    summary === undefined ||
+    (summary.alignment_state !== "complete" && summary.alignment_state !== "uncertain") ||
+    !INVESTIGATION_STATES.includes(summary.investigation_state as InvestigationState) ||
+    lastPoint === undefined ||
+    investigation === undefined ||
+    (typeof investigation.primary_finding_id !== "string" && investigation.primary_finding_id !== null) ||
+    findingIds === undefined ||
+    uncertaintyIds === undefined ||
+    actions === undefined ||
+    actions.some((item) => item === undefined) ||
+    findings === undefined ||
+    findings.some((item) => item === undefined) ||
+    uncertainties === undefined ||
+    uncertainties.some((item) => item === undefined)
+  ) {
+    throw new Error("Trace v4 comparison response was invalid");
+  }
+  const findingItems = findings as TraceInsightV4Response["findings"];
+  const uncertaintyItems = uncertainties as InvestigationUncertainty[];
+  if (
+    findingItems.length !== findingIds.length ||
+    findingItems.some((item) => !findingIds.includes(item.id)) ||
+    uncertaintyItems.length !== uncertaintyIds.length ||
+    uncertaintyItems.some((item) => !uncertaintyIds.includes(item.uncertainty_id))
+  ) {
+    throw new Error("Trace v4 comparison response was invalid");
+  }
+  return {
+    comparison_version: "0.4",
+    left,
+    right,
+    summary: {
+      alignment_state: summary.alignment_state,
+      investigation_state: summary.investigation_state as InvestigationState,
+      last_reliably_matched_point: lastPoint,
+    },
+    investigation: {
+      primary_finding_id: investigation.primary_finding_id,
+      finding_ids: findingIds,
+      uncertainty_ids: uncertaintyIds,
+      actions: actions as V4Action[],
+    },
+    findings: findingItems,
+    uncertainties: uncertaintyItems,
+  };
+}
+
+export function mergeStructuredDiff(
+  response: TraceInsightResponse,
+  v4: TraceInsightV4Response,
+): TraceInsightResponse {
+  if (response.left_trace.trace_id !== v4.left.trace_id || response.right_trace.trace_id !== v4.right.trace_id) {
+    return response;
+  }
+  const v4ById = new Map(v4.findings.map((finding) => [finding.id, finding]));
+  return {
+    ...response,
+    findings: response.findings.map((finding) => {
+      const structured = v4ById.get(finding.finding_id);
+      if (structured === undefined) {
+        return finding;
+      }
+      return {
+        ...finding,
+        structured_diff_available: structured.structured_diff_available,
+        structured_diff: structured.structured_diff,
+        structured_diff_truncated: structured.structured_diff_truncated,
+        structured_diff_reason: structured.structured_diff_reason,
+      };
+    }),
+  };
+}
+
 export function traceListUrl(filters: TraceListFilters): string {
   const parameters = new URLSearchParams({
     limit: String(filters.limit),
@@ -1168,6 +1391,10 @@ export function comparisonUrl(leftTraceId: string, rightTraceId: string): string
 
 export function insightComparisonUrl(leftTraceId: string, rightTraceId: string): string {
   return `/api/v3/compare/${encodeURIComponent(leftTraceId)}/${encodeURIComponent(rightTraceId)}`;
+}
+
+export function structuredDiffComparisonUrl(leftTraceId: string, rightTraceId: string): string {
+  return `/api/v4/compare/${encodeURIComponent(leftTraceId)}/${encodeURIComponent(rightTraceId)}`;
 }
 
 export async function fetchTraceList(
@@ -1236,6 +1463,11 @@ export async function fetchTraceComparison(leftTraceId: string, rightTraceId: st
 export async function fetchInsightComparison(leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceInsightResponse> {
   const responseText = await fetchQueryApiText(insightComparisonUrl(leftTraceId, rightTraceId), signal);
   return decodeInsightComparisonResponse(responseText, leftTraceId, rightTraceId);
+}
+
+export async function fetchStructuredDiffComparison(leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceInsightV4Response> {
+  const responseText = await fetchQueryApiText(structuredDiffComparisonUrl(leftTraceId, rightTraceId), signal);
+  return decodeV4ComparisonResponse(responseText, leftTraceId, rightTraceId);
 }
 
 export async function fetchComparisonDetail(detailEndpoint: InsightDetailEndpoint, leftTraceId: string, rightTraceId: string, signal: AbortSignal): Promise<TraceComparisonResponse> {

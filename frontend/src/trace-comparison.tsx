@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchComparisonDetail, fetchInsightComparison, QueryApiError } from "./api";
+import { fetchComparisonDetail, fetchInsightComparison, fetchStructuredDiffComparison, mergeStructuredDiff, QueryApiError } from "./api";
 import { ComparisonInsight } from "./comparison-insight";
 import type {
   ComparisonFieldRecord,
@@ -444,6 +444,17 @@ export function TraceComparison({
       (response) => {
         if (requestIdentity.current === currentRequest) {
           setView({ kind: "loaded", response });
+          void fetchStructuredDiffComparison(leftTraceId, rightTraceId, controller.signal).then(
+            (structuredDiff) => {
+              if (requestIdentity.current === currentRequest) {
+                setView({ kind: "loaded", response: mergeStructuredDiff(response, structuredDiff) });
+              }
+            },
+            () => {
+              // The v3 cockpit remains the honest fallback if the optional
+              // additive v4 projection is unavailable.
+            },
+          );
         }
       },
       (error: unknown) => {

@@ -6,6 +6,8 @@ import type {
   InvestigationFindingType,
   InvestigationSummaryView,
   InvestigationUncertainty,
+  StructuredDiffObservation,
+  StructuredDiffRecord,
   TraceInsightResponse,
 } from "./types";
 
@@ -103,6 +105,41 @@ function changedDescription(finding: InvestigationFinding): string {
   return field === null
     ? `${findingLabel(finding.type)} was observed at this structural location.`
     : `Observed ${field} differs between the left and right trace.`;
+}
+
+function structuredDiffValue(observation: StructuredDiffObservation): string {
+  if (observation.state !== "present") {
+    return observation.state === "absent" ? "Absent" : observation.state.replaceAll("_", " ");
+  }
+  return formatValue(observation.value ?? null);
+}
+
+function StructuredDiffView({ finding }: { finding: InvestigationFinding }) {
+  if (finding.structured_diff_available === false) {
+    const reason = finding.structured_diff_reason?.replaceAll("_", " ") ?? "not available";
+    return <p className="cockpit-muted">Detailed field comparison unavailable: {reason}.</p>;
+  }
+  if (finding.structured_diff_available !== true || finding.structured_diff === undefined) {
+    return null;
+  }
+  return (
+    <div className="cockpit-structured-diff" aria-label="Structured field differences">
+      <p className="comparison-side-label">Structured field differences</p>
+      {finding.structured_diff.length === 0 && <p className="cockpit-muted">No bounded field records were emitted.</p>}
+      {finding.structured_diff.map((record: StructuredDiffRecord) => (
+        <div className="cockpit-structured-diff-record" key={`${record.op}:${record.path}`}>
+          <code>{record.path || "(root)"}</code>
+          <strong>{record.op}</strong>
+          <span><b>Left</b> {structuredDiffValue(record.left)}</span>
+          <span><b>Right</b> {structuredDiffValue(record.right)}</span>
+          {record.reason !== null && <small>{record.reason.replaceAll("_", " ")}</small>}
+        </div>
+      ))}
+      {finding.structured_diff_truncated === true && (
+        <p className="cockpit-muted">The structured field view was truncated: {finding.structured_diff_reason?.replaceAll("_", " ") ?? "bounded limit reached"}.</p>
+      )}
+    </div>
+  );
 }
 
 function sideObserved(finding: InvestigationFinding, side: "left" | "right"): { state: string; value: CanonicalJsonValue | null } | null {
@@ -328,6 +365,7 @@ export function ComparisonInsight({
           <div className="cockpit-change-summary">
             <strong>{findingLabel(primary.type)}</strong>
             <p>{changedDescription(primary)}</p>
+            <StructuredDiffView finding={primary} />
           </div>
         ) : investigation.state === "uncertain" && evidenceFinding !== null ? (
           <div className="cockpit-change-summary"><p>Other observed difference: <strong>{findingLabel(evidenceFinding.type)}</strong>. It was not promoted to a starting point.</p></div>

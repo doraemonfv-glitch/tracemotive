@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { comparisonUrl, decodeComparisonResponse, insightComparisonUrl } from "./api";
+import { comparisonUrl, decodeComparisonResponse, insightComparisonUrl, structuredDiffComparisonUrl } from "./api";
 import { comparisonRoute, TraceMotiveApp } from "./app";
 import { TraceComparison } from "./trace-comparison";
 import { TraceList } from "./trace-list";
@@ -164,6 +164,54 @@ function insightResponse(): Response {
   return new Response(JSON.stringify(insightPayload()), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
+function structuredDiffPayload() {
+  return {
+    comparison_version: "0.4",
+    left: { trace_id: leftId, name: "Baseline run", status: "ok" },
+    right: { trace_id: rightId, name: "Candidate run", status: "error" },
+    summary: {
+      alignment_state: "uncertain",
+      investigation_state: "identified",
+      last_reliably_matched_point: { state: "matched", left: ref(leftId, "stable-left"), right: ref(rightId, "stable-right"), coordinate: path("Stable span"), reason: "before_first_finding" },
+    },
+    investigation: {
+      primary_finding_id: "finding-0001",
+      finding_ids: ["finding-0001"],
+      uncertainty_ids: ["uncertainty-0001"],
+      actions: [
+        { type: "open_left", target: ref(leftId, "changed-left") },
+        { type: "open_right", target: ref(rightId, "changed-right") },
+        { type: "full_comparison", target: { hash: `#/compare/${leftId}/${rightId}` } },
+        { type: "copy_local_reference", target: { hash: `#/compare/${leftId}/${rightId}` } },
+      ],
+    },
+    findings: [{
+      id: "finding-0001",
+      type: "tool_output_changed",
+      coordinate: { kind: "span", semantic_path: path("Changed tool"), group_signature: null },
+      left: ref(leftId, "changed-left"),
+      right: ref(rightId, "changed-right"),
+      scope: "behavioral",
+      observation_state: "confirmed_observation",
+      reason_code: "captured_values_differ",
+      field_path: "/output",
+      observed: { left: { state: "captured", value: { result: "safe" } }, right: { state: "captured", value: { result: "changed" } } },
+      evidence: [{ kind: "field_observation", path: "/output/result", left: "safe", right: "changed", state: "different", reason: null }],
+      structured_diff_available: true,
+      structured_diff: [{ op: "replace", path: "/output/result", left: { state: "present", value: "safe" }, right: { state: "present", value: "changed" }, reason: null }],
+      structured_diff_truncated: false,
+      structured_diff_reason: null,
+      relationships: { supports: [], limited_by: [] },
+      actions: [{ type: "copy_evidence", target: { finding_id: "finding-0001" } }],
+    }],
+    uncertainties: [{ uncertainty_id: "uncertainty-0001", coordinate: null, reason_code: "capture_unavailable", side: "right", blocks_earlier_claim: false, evidence: [{ kind: "capture", state: "unknown" }] }],
+  };
+}
+
+function structuredDiffResponse(): Response {
+  return new Response(JSON.stringify(structuredDiffPayload()), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 function insightResponseFor(requestedLeftId: string, requestedRightId: string): Response {
   const serialized = JSON.stringify(insightPayload()).replaceAll(leftId, requestedLeftId).replaceAll(rightId, requestedRightId);
   const payload = JSON.parse(serialized) as Record<string, any>;
@@ -198,9 +246,11 @@ function comparisonResponse(status = 200): Response {
 
 function deferredFetch() {
   const requests: Array<{ url: string; resolve: (response: Response) => void; reject: (error: unknown) => void }> = [];
-  const fetchMock = vi.fn((url: string) => new Promise<Response>((resolve, reject) => {
-    requests.push({ url, resolve, reject });
-  }));
+  const fetchMock = vi.fn((url: string) => url.startsWith("/api/v4/")
+    ? Promise.resolve(structuredDiffResponse())
+    : new Promise<Response>((resolve, reject) => {
+      requests.push({ url, resolve, reject });
+    }));
   return { fetchMock, requests };
 }
 
@@ -245,21 +295,24 @@ afterEach(() => {
 
 describe("TraceComparison", () => {
   it("loads the v0.3 insight first and defers the v0.2 detail request", async () => {
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : url === structuredDiffComparisonUrl(leftId, rightId) ? structuredDiffResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
 
     expect(screen.getByText("Loading comparison...")).toBeTruthy();
     expect((await screen.findAllByText("Look here")).length).toBeGreaterThan(0);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenCalledWith(insightComparisonUrl(leftId, rightId), expect.objectContaining({ method: "GET" }));
+    expect(fetchMock).toHaveBeenCalledWith(structuredDiffComparisonUrl(leftId, rightId), expect.objectContaining({ method: "GET" }));
+    expect(screen.getByText("/output/result")).toBeTruthy();
+    expect(screen.getByText("replace")).toBeTruthy();
     expect(decodeComparisonResponse(JSON.stringify(comparisonPayload()), leftId, rightId).comparison_version).toBe("0.2");
   });
 
   it("passes the exact v3 span targets to left/right navigation and keeps full comparison on v2", async () => {
     const onOpenSpan = vi.fn();
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : url === structuredDiffComparisonUrl(leftId, rightId) ? structuredDiffResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} onOpenSpan={onOpenSpan} />);
@@ -275,15 +328,15 @@ describe("TraceComparison", () => {
   });
 
   it("shows summary, all classifications, counts, changed fields, and inert hostile content", async () => {
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : url === structuredDiffComparisonUrl(leftId, rightId) ? structuredDiffResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
     const { container } = render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
 
     expect(await screen.findByText("Look here")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "Full comparison" }));
     expect(await screen.findByText("Trace-level differences")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getAllByText("exact_match").length).toBe(2);
     expect(screen.getByText("left_only")).toBeTruthy();
     expect(screen.getByText("right_only")).toBeTruthy();
@@ -314,7 +367,7 @@ describe("TraceComparison", () => {
   });
 
   it("keeps ambiguity and unavailable records visible under Changed only", async () => {
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url === insightComparisonUrl(leftId, rightId) ? insightResponse() : url === structuredDiffComparisonUrl(leftId, rightId) ? structuredDiffResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
     render(<TraceComparison leftTraceId={leftId} rightTraceId={rightId} onBack={vi.fn()} />);
     await screen.findAllByText("Look here");
@@ -474,7 +527,7 @@ describe("trace comparison selection", () => {
 
   it("navigates from the existing list into the comparison route", async () => {
     window.history.replaceState({}, "", "#/");
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url.startsWith("/api/v1/") ? traceListResponse() : url.startsWith("/api/v3/") ? insightResponse() : comparisonResponse()));
+    const fetchMock = vi.fn((url: string) => Promise.resolve(url.startsWith("/api/v1/") ? traceListResponse() : url.startsWith("/api/v3/") ? insightResponse() : url.startsWith("/api/v4/") ? structuredDiffResponse() : comparisonResponse()));
     vi.stubGlobal("fetch", fetchMock);
     render(<TraceMotiveApp />);
 
