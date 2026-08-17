@@ -31,15 +31,14 @@ def _expected_project_url_headers() -> list[str]:
 
 
 def _extract_tracked_checkout(destination: Path) -> None:
-    """Materialize only HEAD-tracked files into a clean checkout directory."""
+    """Materialize only tracked files from the current candidate checkout."""
 
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("fresh-checkout packaging gate requires git on PATH")
 
-    archive = destination.parent / "tracked-source.tar"
     result = subprocess.run(
-        [git, "archive", "--format=tar", "--output", str(archive), "HEAD"],
+        [git, "ls-files", "-z"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -48,21 +47,24 @@ def _extract_tracked_checkout(destination: Path) -> None:
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git archive failed:\n{result.stdout}\n{result.stderr}")
+        raise RuntimeError(f"git ls-files failed:\n{result.stdout}\n{result.stderr}")
 
     destination.mkdir(parents=True, exist_ok=True)
     destination_root = destination.resolve()
-    with tarfile.open(archive) as source:
-        for member in source.getmembers():
-            if member.issym() or member.islnk():
-                raise RuntimeError(f"tracked archive contains an unsupported link: {member.name}")
-            target = (destination / member.name).resolve()
-            if not target.is_relative_to(destination_root):
-                raise RuntimeError(f"tracked archive member escapes checkout: {member.name}")
-        if sys.version_info >= (3, 12):
-            source.extractall(destination, filter="data")
-        else:
-            source.extractall(destination)
+    for encoded_path in result.stdout.split("\0"):
+        if not encoded_path:
+            continue
+        relative = Path(encoded_path)
+        source = (ROOT / relative)
+        target = (destination / relative).resolve()
+        if relative.is_absolute() or not target.is_relative_to(destination_root):
+            raise RuntimeError(f"tracked file escapes checkout: {relative}")
+        if source.is_symlink():
+            raise RuntimeError(f"tracked checkout contains an unsupported link: {relative}")
+        if not source.is_file():
+            raise RuntimeError(f"tracked file is missing: {relative}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
 
 
 def _ui_manifest(ui_root: Path) -> dict[str, str]:
@@ -244,7 +246,7 @@ class PackagingOnboardingTests(unittest.TestCase):
     def test_pyproject_declares_single_runtime_and_optional_boundaries(self) -> None:
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('name = "tracemotive"', text)
-        self.assertIn('version = "0.3.0"', text)
+        self.assertIn('version = "0.4.0"', text)
         self.assertIn('requires-python = ">=3.10"', text)
         self.assertRegex(text, r'"fastapi>=0\.110,<1"')
         self.assertRegex(text, r'"uvicorn>=0\.30,<1"')
@@ -413,8 +415,8 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
         )
         if build.returncode != 0:
             raise RuntimeError(f"local artifact build failed:\n{build.stdout}\n{build.stderr}")
-        wheels = list(cls._artifact_dir.glob("tracemotive-0.3.0-*.whl"))
-        sdists = list(cls._artifact_dir.glob("tracemotive-0.3.0.tar.gz"))
+        wheels = list(cls._artifact_dir.glob("tracemotive-0.4.0-*.whl"))
+        sdists = list(cls._artifact_dir.glob("tracemotive-0.4.0.tar.gz"))
         if len(wheels) != 1 or len(sdists) != 1:
             raise RuntimeError(f"unexpected artifacts: {list(cls._artifact_dir.iterdir())}")
         cls._wheel = wheels[0]
@@ -531,7 +533,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertEqual(wheel_ui_manifest, self._fresh_checkout_ui_manifest)
             self.assertFalse(any("node_modules" in name for name in names))
             self.assertFalse(any(name.startswith("frontend/") for name in names))
-            license_name = "tracemotive-0.3.0.dist-info/licenses/LICENSE"
+            license_name = "tracemotive-0.4.0.dist-info/licenses/LICENSE"
             self.assertIn(license_name, names)
             self.assertFalse(any(name.startswith("agentlens/") for name in names))
             self.assertFalse(any(b"AgentLensConfigurationError" in archive.read(name) for name in names))
@@ -539,10 +541,10 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             processor_source = archive.read("tracemotive/integrations/openai_agents.py")
             self.assertIn(new_processor_bytes, processor_source)
             metadata = Parser().parsestr(
-                archive.read("tracemotive-0.3.0.dist-info/METADATA").decode("utf-8")
+                archive.read("tracemotive-0.4.0.dist-info/METADATA").decode("utf-8")
             )
             self.assertEqual(metadata["Name"], "tracemotive")
-            self.assertEqual(metadata["Version"], "0.3.0")
+            self.assertEqual(metadata["Version"], "0.4.0")
             self.assertEqual(metadata["Requires-Python"], ">=3.10")
             self.assertEqual(
                 metadata.get_all("Project-URL"),
@@ -568,7 +570,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIsNotNone(pkg_info_member)
             sdist_metadata = Parser().parsestr(pkg_info_member.read().decode("utf-8"))
             self.assertEqual(sdist_metadata["Name"], "tracemotive")
-            self.assertEqual(sdist_metadata["Version"], "0.3.0")
+            self.assertEqual(sdist_metadata["Version"], "0.4.0")
             self.assertEqual(sdist_metadata["Requires-Python"], ">=3.10")
             self.assertEqual(
                 sdist_metadata.get_all("Project-URL"),

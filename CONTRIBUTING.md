@@ -9,8 +9,8 @@ additive TraceMotive v0.4 Core implementation through the accepted bootstrap,
 packaging, cockpit, structured-diff, onboarding, and identified/uncertain-demo
 issues. The frozen implementation design is under [docs/v0.4](docs/v0.4/).
 
-The package metadata remains `0.3.0`; current v0.4 implementation work does not
-by itself authorize a version bump or release.
+The package metadata is `0.4.0` for the current release candidate. Version
+bumps and publication remain explicit release tasks.
 
 `AGENTS.md` contains repository implementation rules.
 

@@ -1,4 +1,4 @@
-"""Deterministic local v0.3 first-value demo seeding."""
+"""Deterministic local v0.4.0 first-value demo seeding."""
 
 from __future__ import annotations
 
@@ -127,7 +127,7 @@ def _seed_trace_once(*, changed: bool) -> str:
     trace_id: str | None = None
     with tracemotive.trace(
         name,
-        metadata={"demo": "v0.3-order-status", "scenario": "reference" if not changed else "changed"},
+        metadata={"demo": "v0.4-order-status", "scenario": "reference" if not changed else "changed"},
     ) as trace_value:
         if trace_value is None:
             raise DemoError("TraceMotive did not create the demo Trace")
@@ -283,23 +283,23 @@ def _comparison_json(
         body = response.read()
     except (OSError, ValueError, http.client.HTTPException) as exc:
         raise DemoError(
-            "TraceMotive seeded the demo traces, but the local v0.3 comparison was unavailable"
+            "TraceMotive seeded the demo traces, but the local comparison was unavailable"
         ) from exc
     finally:
         connection.close()
     if response.status != 200:
         raise DemoError(
-            "TraceMotive seeded the demo traces, but the local v0.3 comparison was unavailable"
+            "TraceMotive seeded the demo traces, but the local comparison was unavailable"
         )
     try:
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeError, ValueError) as exc:
         raise DemoError(
-            "TraceMotive seeded the demo traces, but the local v0.3 comparison was invalid"
+            "TraceMotive seeded the demo traces, but the local comparison was invalid"
         ) from exc
     if not isinstance(payload, dict):
         raise DemoError(
-            "TraceMotive seeded the demo traces, but the local v0.3 comparison was invalid"
+            "TraceMotive seeded the demo traces, but the local comparison was invalid"
         )
     return payload
 
@@ -353,7 +353,7 @@ def _validate_demo_comparison(
     )
     if not valid:
         raise DemoError(
-            "TraceMotive seeded the demo traces, but the local v0.3 comparison "
+            "TraceMotive seeded the demo traces, but the local comparison "
             "did not produce the expected supported investigation point"
         )
 
@@ -390,7 +390,7 @@ def _validate_uncertain_demo_comparison(
     )
     if not valid:
         raise DemoError(
-            "TraceMotive seeded the uncertain demo traces, but the local v0.3 "
+            "TraceMotive seeded the uncertain demo traces, but the local "
             "comparison did not preserve the expected seeded pair and ambiguity barrier"
         )
 

@@ -51,7 +51,7 @@ def _parser() -> argparse.ArgumentParser:
         help=f"loopback port (default: {DEFAULT_PORT})",
     )
     serve.set_defaults(handler=_run_serve)
-    demo = commands.add_parser("demo", help="seed the deterministic local v0.3 demo")
+    demo = commands.add_parser("demo", help="seed the deterministic local v0.4.0 demo")
     demo.add_argument(
         "--scenario",
         choices=("identified", "uncertain"),
