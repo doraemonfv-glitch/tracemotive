@@ -19,6 +19,16 @@ from email.parser import Parser
 
 ROOT = Path(__file__).resolve().parents[1]
 
+PROJECT_URLS = {
+    "Repository": "https://github.com/doraemonfv-glitch/tracemotive",
+    "Issues": "https://github.com/doraemonfv-glitch/tracemotive/issues",
+    "Security": "https://github.com/doraemonfv-glitch/tracemotive/security",
+}
+
+
+def _expected_project_url_headers() -> list[str]:
+    return [f"{label}, {url}" for label, url in PROJECT_URLS.items()]
+
 
 def _extract_tracked_checkout(destination: Path) -> None:
     """Materialize only HEAD-tracked files into a clean checkout directory."""
@@ -239,6 +249,16 @@ class PackagingOnboardingTests(unittest.TestCase):
         self.assertRegex(text, r'"fastapi>=0\.110,<1"')
         self.assertRegex(text, r'"uvicorn>=0\.30,<1"')
         self.assertRegex(text, r'"openai-agents>=0\.17,<0\.18"')
+
+    def test_pyproject_uses_verified_project_urls(self) -> None:
+        text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        expected = "\n".join(
+            [
+                "[project.urls]",
+                *[f'{label} = "{url}"' for label, url in PROJECT_URLS.items()],
+            ]
+        )
+        self.assertIn(expected, text)
 
     def test_license_and_runtime_package_selection_are_present(self) -> None:
         license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
@@ -524,6 +544,10 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertEqual(metadata["Name"], "tracemotive")
             self.assertEqual(metadata["Version"], "0.3.0")
             self.assertEqual(metadata["Requires-Python"], ">=3.10")
+            self.assertEqual(
+                metadata.get_all("Project-URL"),
+                _expected_project_url_headers(),
+            )
             requires = metadata.get_all("Requires-Dist")
             self.assertIn("fastapi<1,>=0.110", requires)
             self.assertIn('uvicorn<1,>=0.30; extra == "server"', requires)
@@ -546,6 +570,10 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertEqual(sdist_metadata["Name"], "tracemotive")
             self.assertEqual(sdist_metadata["Version"], "0.3.0")
             self.assertEqual(sdist_metadata["Requires-Python"], ">=3.10")
+            self.assertEqual(
+                sdist_metadata.get_all("Project-URL"),
+                _expected_project_url_headers(),
+            )
             sdist_requires = sdist_metadata.get_all("Requires-Dist")
             self.assertIn("fastapi<1,>=0.110", sdist_requires)
             self.assertIn('uvicorn<1,>=0.30; extra == "server"', sdist_requires)

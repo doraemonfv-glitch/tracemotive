@@ -14,6 +14,11 @@ dependencies = [
     "fastapi>=0.110,<1",
 ]
 
+[project.urls]
+Repository = "https://github.com/doraemonfv-glitch/tracemotive"
+Issues = "https://github.com/doraemonfv-glitch/tracemotive/issues"
+Security = "https://github.com/doraemonfv-glitch/tracemotive/security"
+
 [project.scripts]
 tracemotive = "tracemotive.cli:main"
 
