@@ -5,8 +5,29 @@ export const ONBOARDING_COMMANDS = {
   server: "tracemotive serve",
   identifiedDemo: "tracemotive demo",
   uncertainDemo: "tracemotive demo --scenario uncertain",
-  actualAgentInstall: 'python -m pip install -e ".[server,openai-agents]"',
-  actualAgentRun: "python -m examples.openai_agents_example",
+  openaiAgentsInstall: 'python -m pip install "tracemotive[openai-agents]"',
+  openaiAgentsSnippet: `import tracemotive
+from tracemotive.integrations.openai_agents import install
+
+tracemotive.configure(
+    enabled=True,
+    endpoint="http://127.0.0.1:8765",
+    capture_content=False,
+)
+install(local_only=True)`,
+  genericPythonSnippet: `import tracemotive
+
+tracemotive.configure(
+    enabled=True,
+    endpoint="http://127.0.0.1:8765",
+    capture_content=False,
+)
+
+with tracemotive.trace("my-agent"):
+    with tracemotive.span("work"):
+        pass
+
+tracemotive.flush()`,
 } as const;
 
 function CopyableCommand({ label, command }: { label: string; command: string }) {
@@ -53,7 +74,7 @@ export function EmptyStateOnboarding() {
         <p className="eyebrow">First local comparison</p>
         <h2>See what changed in an AI agent run</h2>
         <p>TraceMotive compares AI agent executions and identifies the first behavioral divergence supported by the available evidence.</p>
-        <p className="onboarding-limit">It does not claim that an observed divergence caused a failure. The collector, database, and UI stay on this machine through the loopback server.</p>
+        <p className="onboarding-limit">It does not claim that an observed divergence caused a failure. The collector, database, and UI stay on this machine through the loopback server. Normal installed users do not need Node.js, npm, or a repository checkout.</p>
         <CopyableCommand label="Run the identified example" command={ONBOARDING_COMMANDS.identifiedDemo} />
         <p className="onboarding-next-step">After it finishes, reload this page, select the reference and changed demo traces, and choose <strong>Compare selected traces</strong>.</p>
       </div>
@@ -74,10 +95,12 @@ export function EmptyStateOnboarding() {
         </section>
 
         <section className="onboarding-support" aria-labelledby="onboarding-agent-heading">
-          <h3 id="onboarding-agent-heading">Instrument an actual agent</h3>
+          <h3 id="onboarding-agent-heading">Use TraceMotive with your own agent</h3>
           <p>TraceMotive itself needs no API key. Your model provider may require one, and its model traffic may leave this machine.</p>
-          <CopyableCommand label="Install the optional example dependencies" command={ONBOARDING_COMMANDS.actualAgentInstall} />
-          <CopyableCommand label="Run the OpenAI Agents example" command={ONBOARDING_COMMANDS.actualAgentRun} />
+          <p>The validated framework integration is the OpenAI Agents SDK. Generic Python is manual instrumentation, not an automatic adapter. LangGraph is not currently supported.</p>
+          <CopyableCommand label="Install the OpenAI Agents extra" command={ONBOARDING_COMMANDS.openaiAgentsInstall} />
+          <CopyableCommand label="OpenAI Agents public integration" command={ONBOARDING_COMMANDS.openaiAgentsSnippet} />
+          <CopyableCommand label="Generic Python manual instrumentation" command={ONBOARDING_COMMANDS.genericPythonSnippet} />
         </section>
       </div>
     </section>

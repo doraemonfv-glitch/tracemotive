@@ -35,6 +35,12 @@ class DocumentationTests(unittest.TestCase):
             _parser().parse_args(["demo", "--scenario", "uncertain"]).scenario,
             "uncertain",
         )
+        self.assertIn('python -m pip install "tracemotive[openai-agents]"', self.readme)
+        self.assertIn("from tracemotive.integrations.openai_agents import install", self.readme)
+        self.assertIn("install(local_only=True)", self.readme)
+        self.assertIn("Generic Python support is manual instrumentation", self.readme)
+        self.assertIn("LangGraph is not currently supported.", self.readme)
+        self.assertNotIn("python -m examples.openai_agents_example", self.readme)
 
     def test_readme_evaluation_facts_match_the_current_oracle(self) -> None:
         scenarios = build_evaluation_corpus()

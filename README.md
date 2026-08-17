@@ -42,8 +42,8 @@ Open the printed comparison URL. In the comparison, use the compact workflow:
 
 - **Look here** — the first evidence-supported investigation starting point;
 - **What changed** — the best supported behavioral description;
-- **Evidence** — captured observations and their limitations;
-- **Next** — open the left span, right span, or full comparison; and
+- **Later observations** — additional supported behavioral observations, when a safe compact subset exists;
+- **Evidence** — captured observations, limitations, and left/right/full-comparison actions; and
 - **What TraceMotive does not know** — the boundary between observation and
   explanation.
 
@@ -107,30 +107,40 @@ checks at versions `0.17.0`, `0.17.4`, and `0.17.8` for the adapter callbacks,
 span-data fields, processor registration, model settings, and example
 construction surface.
 
-Install it separately when you want to instrument a real agent:
+Install it separately when you want to instrument a real agent. This is the
+normal installed-user path; it does not require a repository checkout:
 
 ```text
 python -m pip install "tracemotive[openai-agents]"
 ```
 
-The actual-agent example requires the model provider's credentials. It is not
-needed for the local deterministic demo. With the Collector already running:
+With the Collector already running, use the public integration API:
 
-```text
-python -m examples.openai_agents_example
+```python
+import tracemotive
+from tracemotive.integrations.openai_agents import install
+
+tracemotive.configure(
+    enabled=True,
+    endpoint="http://127.0.0.1:8765",
+    capture_content=False,
+)
+install(local_only=True)
 ```
 
 `local_only=True` makes TraceMotive the only OpenAI Agents tracing processor in
 that process. It controls framework tracing processors; it does not make model
 traffic local. A provider request may still leave the machine.
 
-LangGraph is not a validated integration in this checkout and is not part of
-the current support claim. It is conditional v0.4 design work only if its full
-public-runtime GO gate passes; otherwise it is deferred to v0.4.1. No other
-framework receives a support claim by analogy.
+Generic Python support is manual instrumentation through the public
+`configure`, `trace`, `span`, and `flush` SDK. It is not an automatic
+framework adapter.
 
-See the [OpenAI Agents integration notes](docs/openai-agents.md) and the
-[example README](examples/README.md) for the validated integration path.
+LangGraph is not currently supported.
+
+See the [OpenAI Agents integration notes](docs/openai-agents.md) for the
+installed-user path. The [example README](examples/README.md) is
+source-checkout documentation only.
 
 ## Install a released package
 

@@ -121,7 +121,7 @@ Historical v0.1 exclusions include Replay, RCA, Eval or Benchmark, distributed
 tracing, additional framework adapters, cloud or hosted backends,
 authentication, and remote collectors. Current v0.4 Core also does not claim
 LangGraph support, a full demo catalog, causal diagnosis, ranking, confidence,
-or a hosted service; LangGraph remains conditional on its separate GO gate.
+or a hosted service; LangGraph is not currently supported.
 
 ## When to open an issue first
 

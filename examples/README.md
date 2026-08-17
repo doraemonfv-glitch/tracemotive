@@ -1,3 +1,6 @@
+This file is source-checkout documentation. The commands below require a
+TraceMotive repository checkout. They are not part of a normal PyPI
+installation and do not work from an installed `tracemotive` package alone.
 # Issue 14 OpenAI Agents example
 
 This is the minimal Frozen Specification example. It runs one real OpenAI

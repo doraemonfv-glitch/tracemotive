@@ -113,7 +113,12 @@ describe("TraceList", () => {
     expect(screen.getByText("tracemotive demo")).toBeTruthy();
     expect(screen.getByText("tracemotive serve")).toBeTruthy();
     expect(screen.getByText("tracemotive demo --scenario uncertain")).toBeTruthy();
-    expect(screen.getByText("python -m examples.openai_agents_example")).toBeTruthy();
+    expect(screen.getByText('python -m pip install "tracemotive[openai-agents]"')).toBeTruthy();
+    expect(screen.getByText(/Generic Python is manual instrumentation/)).toBeTruthy();
+    expect(screen.getByText(/LangGraph is not currently supported/)).toBeTruthy();
+    expect(screen.getByText(/Normal installed users do not need Node.js, npm, or a repository checkout/)).toBeTruthy();
+    expect(screen.queryByText("python -m examples.openai_agents_example")).toBeNull();
+    expect(screen.queryByText(/pip install -e/)).toBeNull();
     expect(screen.getByText(/TraceMotive itself needs no API key/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(`${TRACE_LIST_PATH}?limit=50&offset=0`, expect.anything());
