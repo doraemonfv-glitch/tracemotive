@@ -118,15 +118,20 @@ contains the production UI; Node.js/npm are not required.
 ## Install from a fresh checkout
 
 For contributors and local development, create and activate a virtual
-environment, then install the package from this repository and the Uvicorn
-server extra.
+environment, install the Python development dependencies, then run the single
+repository bootstrap command. It installs the locked frontend dependencies,
+builds the production UI, and copies the generated package data into the local
+checkout. The generated UI remains disposable ignored output.
 
 PowerShell:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install "setuptools>=77,<84" wheel build
 python -m pip install -e ".[server]"
+python scripts/bootstrap.py
 ```
 
 POSIX shells:
@@ -134,12 +139,22 @@ POSIX shells:
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "setuptools>=77,<84" wheel build
 python -m pip install -e ".[server]"
+python scripts/bootstrap.py
 ```
 
-The core install contains FastAPI only as its third-party runtime dependency.
-The `server` extra adds Uvicorn. The optional `openai-agents` extra is not
-installed by the core path:
+The canonical bootstrap command is:
+
+```text
+python scripts/bootstrap.py
+```
+
+It must be run from the repository root with the development virtual
+environment active. The core install contains FastAPI only as its third-party
+runtime dependency. The `server` extra adds Uvicorn. The optional
+`openai-agents` extra is not installed by the core path:
 
 ```text
 python -m pip install -e ".[server,openai-agents]"
@@ -181,8 +196,8 @@ SQLite `:memory:` for v0.1 compatibility.
 The frontend development server is for contributors and frontend work only:
 
 ```text
+python scripts/bootstrap.py
 cd frontend
-npm ci
 npm run dev
 ```
 
@@ -308,10 +323,9 @@ python -m unittest discover -s tests -v
 Frontend tests and build:
 
 ```text
+python scripts/bootstrap.py
 cd frontend
-npm ci
 npm test
-npm run build:package
 ```
 
 Local wheel/sdist build and installed-package checks are documented in

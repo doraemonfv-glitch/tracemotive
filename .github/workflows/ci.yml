@@ -30,11 +30,8 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build packaged frontend assets
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build:package
+      - name: Bootstrap repository
+        run: python scripts/bootstrap.py
 
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
@@ -61,14 +58,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap repository
+        run: python scripts/bootstrap.py
 
       - name: Run frontend tests
         working-directory: frontend
         run: npm test
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build:package

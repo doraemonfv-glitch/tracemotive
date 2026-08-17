@@ -46,16 +46,18 @@ Install the Python development dependencies:
 ```text
 python -m pip install --upgrade pip
 python -m pip install "setuptools>=77,<84" wheel build
-python -m pip install -r requirements.txt
+python -m pip install -e ".[server]"
 ```
 
-Install the frontend dependencies:
+Prepare the packaged frontend from the repository root using the canonical
+bootstrap command:
 
 ```text
-cd frontend
-npm ci
-cd ..
+python scripts/bootstrap.py
 ```
+
+This runs the locked `npm ci` and `npm run build:package` sequence and writes
+only the disposable ignored generated UI assets.
 
 The normal contribution validation does not require an OpenAI API key or the
 optional OpenAI Agents SDK dependency. The real OpenAI Agents example is a
@@ -72,9 +74,9 @@ python -m unittest discover -s tests -v
 Frontend validation:
 
 ```text
+python scripts/bootstrap.py
 cd frontend
 npm test
-npm run build
 ```
 
 ## Continuous integration
