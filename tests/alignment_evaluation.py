@@ -22,7 +22,6 @@ from tracemotive.canonical import (
     LLMDetails,
     LLMUsage,
     Span,
-    SpanSource,
     ToolDetails,
     Trace,
 )

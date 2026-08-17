@@ -36,3 +36,16 @@ exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 "tracemotive.ui" = ["index.html", "assets/*"]
+
+[tool.ruff]
+target-version = "py310"
+src = ["tracemotive", "tests", "scripts"]
+extend-exclude = ["frontend", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tracemotive/findings.py" = ["F841"]
+"tracemotive/_evaluation/divergence.py" = ["F401"]

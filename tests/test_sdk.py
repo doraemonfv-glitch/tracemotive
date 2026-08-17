@@ -592,7 +592,7 @@ class SDKTests(unittest.TestCase):
 
         async def child_created_in_trace(parent_trace, result):
             result.append((sdk.current_trace(), sdk.current_span()))
-            with tracemotive.trace("task-inner") as inner_trace:
+            with tracemotive.trace("task-inner"):
                 result.append((sdk.current_trace(), sdk.current_span()))
                 with tracemotive.span("task-root") as task_root:
                     result.append(task_root.parent_span_id)

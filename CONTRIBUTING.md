@@ -91,11 +91,12 @@ npm test
 ## Continuous integration
 
 GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
-The workflow has two jobs:
+The workflow has three jobs:
 
-- Python tests on Python 3.12, including the repository dependencies and
+- Python tests on Python 3.10 and 3.12, including the repository dependencies and
   packaging tools.
 - Frontend tests and a production build on Node.js 22.12.0.
+- Ruff plus the V05-03 release-consistency checks.
 
 CI does not require secrets or an OpenAI API key. A passing CI run is a basic
 requirement for a pull request.
