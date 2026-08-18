@@ -28,6 +28,11 @@ Recommended versions:
 - Python `3.10` or newer; Python `3.12` matches the development validation and CI.
 - Node.js `^20.19.0 || >=22.12.0`; Node.js `22.12.0` matches CI.
 
+Installed-user compatibility, limits, and storage facts live in
+[docs/compatibility.md](docs/compatibility.md), [docs/limits.md](docs/limits.md),
+and [docs/storage.md](docs/storage.md). Node.js remains a contributor/build
+requirement only.
+
 Clone the repository and create a virtual environment:
 
 ```text

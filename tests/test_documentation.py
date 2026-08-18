@@ -216,6 +216,9 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertIn("`/api/v2`", self.readme)
         self.assertIn("`/api/v3`", self.readme)
         self.assertIn("`/api/v4/compare/{left}/{right}`", self.readme)
+        self.assertIn("investigation comparison surface", self.readme)
+        self.assertIn("structured-diff projection", self.readme)
+        self.assertNotIn("remain compatibility surfaces", self.readme)
         for path, text in self.live.items():
             self.assertNotIn(
                 "/api/v5",
@@ -240,3 +243,94 @@ class ReleaseConsistencyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CompatibilityLimitsStorageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        cls.compatibility = (ROOT / "docs" / "compatibility.md").read_text(encoding="utf-8")
+        cls.limits = (ROOT / "docs" / "limits.md").read_text(encoding="utf-8")
+        cls.storage = (ROOT / "docs" / "storage.md").read_text(encoding="utf-8")
+        cls.ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        from tests.release_consistency import _project_table
+
+        cls.project = _project_table()
+
+    def test_python_and_agents_claims_match_metadata_and_ci(self) -> None:
+        self.assertEqual(self.project.get("requires-python"), ">=3.10")
+        extras = self.project.get("optional-dependencies")
+        self.assertIsInstance(extras, dict)
+        self.assertIn("openai-agents>=0.17,<0.18", extras["openai-agents"])
+        self.assertIn('- "3.10"', self.ci)
+        self.assertIn('- "3.12"', self.ci)
+        for text in (self.readme, self.compatibility):
+            self.assertIn("`>=3.10`", text)
+            self.assertIn("`3.10`", text)
+            self.assertIn("`3.12`", text)
+            self.assertIn("openai-agents>=0.17,<0.18", text)
+            self.assertIn("LangGraph is not currently supported.", text)
+            self.assertNotIn("/api/v5", text)
+        self.assertIn("Installed users do not need Node.js", self.compatibility)
+        self.assertIn("Normal installed users do not install Node.js", self.readme)
+        self.assertIn("accepted by metadata", self.compatibility)
+        self.assertIn("not a current CI matrix version", self.compatibility)
+
+    def test_documented_hard_limits_match_source_constants(self) -> None:
+        from tracemotive.comparison import (
+            MAX_COMPARISON_RESPONSE_BYTES,
+            MAX_COMPARISON_SPANS,
+            MAX_DIFFERENCE_RECORDS,
+        )
+        from tracemotive.structured_diff import (
+            MAX_STRUCTURED_DIFF_DEPTH,
+            MAX_STRUCTURED_DIFF_NODES,
+            MAX_STRUCTURED_DIFF_RECORDS,
+            MAX_STRUCTURED_DIFF_VALUE_BYTES,
+        )
+        from tracemotive.privacy import MAX_CONTENT_BYTES
+
+        self.assertEqual(MAX_COMPARISON_SPANS, 10_000)
+        self.assertEqual(MAX_DIFFERENCE_RECORDS, 4_096)
+        self.assertEqual(MAX_COMPARISON_RESPONSE_BYTES, 4 * 1024 * 1024)
+        self.assertEqual(MAX_STRUCTURED_DIFF_DEPTH, 32)
+        self.assertEqual(MAX_STRUCTURED_DIFF_NODES, 4_096)
+        self.assertEqual(MAX_STRUCTURED_DIFF_RECORDS, 256)
+        self.assertEqual(MAX_STRUCTURED_DIFF_VALUE_BYTES, 64 * 1024)
+        self.assertEqual(MAX_CONTENT_BYTES, 262144)
+        self.assertIn("`10,000`", self.limits)
+        self.assertIn("`4,096`", self.limits)
+        self.assertIn("`4 MiB`", self.limits)
+        self.assertIn("`32`", self.limits)
+        self.assertIn("`256`", self.limits)
+        self.assertIn("`64 KiB`", self.limits)
+        self.assertIn("comparison fails", self.limits)
+        self.assertIn("bounded", self.limits)
+        self.assertIn("projection", self.limits)
+        self.assertIn("per subtree", self.limits)
+        self.assertIn("global visited-node budget", self.limits)
+        self.assertIn("`262,144`", self.limits)
+        self.assertIn("`10,000`", self.readme)
+        self.assertIn("`4,096`", self.readme)
+        self.assertIn("`4 MiB`", self.readme)
+
+    def test_storage_docs_match_current_deletion_and_retention_reality(self) -> None:
+        self.assertIn("`--db PATH`", self.storage)
+        self.assertIn("`TRACEMOTIVE_DB`", self.storage)
+        self.assertIn("`:memory:`", self.storage)
+        self.assertIn("DELETE /api/v1/traces/{trace_id}", self.storage)
+        self.assertIn("automatic retention", self.storage)
+        self.assertIn("SQLite is not encrypted at rest.", self.storage)
+        self.assertNotIn("encrypted at rest", self.storage.replace("SQLite is not encrypted at rest.", ""))
+        self.assertNotIn("automatic cleanup", self.storage.casefold())
+        self.assertIn("File-backed databases have no automatic retention", self.storage)
+        self.assertIn("persist across process restarts", self.storage)
+        self.assertIn("default `:memory:` database", self.storage)
+        self.assertIn("does not persist across process termination", self.storage)
+        self.assertNotIn("Data remains until that trace is deleted or the database file is removed.", self.storage)
+        self.assertIn("no automatic retention", self.readme)
+        self.assertIn("does not persist across process termination", self.readme)
+        self.assertIn("DELETE /api/v1/traces/{trace_id}", self.readme)
+        self.assertIn("Loopback is not authentication.", self.readme)
+        self.assertIn("investigation comparison surface", self.compatibility)
+        self.assertIn("structured-diff projection", self.compatibility)
+        self.assertNotIn("remain compatibility surfaces", self.compatibility)

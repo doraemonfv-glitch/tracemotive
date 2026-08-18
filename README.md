@@ -231,6 +231,24 @@ The stable SDK surface remains `configure`, `trace`, `span`, and `flush`.
 Tracing failures, an unavailable Collector, and queue overflow do not fail the
 instrumented Agent execution.
 
+## Current support, limits, and storage
+
+TraceMotive is intended for local individual debugging.
+
+- Python `>=3.10` is declared; CI currently validates Python `3.10` and `3.12`.
+- The validated native integration is OpenAI Agents SDK `>=0.17,<0.18`.
+- Generic Python support is the public `configure`, `trace`, `span`, and `flush` API.
+- LangGraph is not currently supported.
+- Installed users do not need Node.js.
+- Per-comparison bounds are `10,000` spans/side, `4,096` difference records, and `4 MiB`.
+- Exceeding a comparison bound fails the comparison; structured-diff bounds truncate the projection.
+- `tracemotive serve` stores a local SQLite file unless `--db` or `TRACEMOTIVE_DB` is set.
+- File-backed databases have no automatic retention and persist until records are deleted or the unused file is intentionally removed. The default programmatic Collector is `:memory:` and does not persist across process termination.
+- One trace can be deleted with `DELETE /api/v1/traces/{trace_id}`.
+- Loopback is not authentication.
+
+Details: [compatibility](docs/compatibility.md), [limits](docs/limits.md), [storage](docs/storage.md), and [security model](docs/security-model.md).
+
 ## Privacy and security boundary
 
 - TraceMotive is disabled by default and includes no analytics or external
@@ -263,7 +281,7 @@ The repository intentionally keeps these layers separate:
 | `spec/v0.2-proposed-spec.md` and `spec/v0.3-proposed-spec.md` | Historical proposed design documents; they are not permission to rewrite the v0.1 contract. |
 | Package metadata | `0.4.1` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
 | Canonical and ingest | Canonical schema `0.1`; ingest protocol `1`. |
-| Query APIs | `/api/v1`, `/api/v2`, and `/api/v3` remain compatibility surfaces. `/api/v4/compare/{left}/{right}` is the additive v0.4 structured-diff projection. |
+| Query APIs | TraceMotive currently exposes `/api/v1`, `/api/v2`, `/api/v3`, and `/api/v4`. `/api/v3` provides the investigation comparison surface, and `/api/v4/compare/{left}/{right}` provides the structured-diff projection. |
 | `docs/v0.4/` | Frozen-for-implementation v0.4 design and release requirements; it is not itself a package-version or release declaration. |
 
 The v0.4 API v3/v4 decision is contract-driven. `/api/v3` remains unchanged.

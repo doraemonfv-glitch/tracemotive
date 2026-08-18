@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 LIVE_DOCUMENT_PATHS = (
     ROOT / "README.md",
     ROOT / "docs" / "openai-agents.md",
+    ROOT / "docs" / "compatibility.md",
+    ROOT / "docs" / "limits.md",
+    ROOT / "docs" / "storage.md",
     ROOT / "SECURITY.md",
     ROOT / "frontend" / "src" / "onboarding.tsx",
 )
