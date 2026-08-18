@@ -705,12 +705,27 @@ class CanonicalModelTests(unittest.TestCase):
             output=None,
             capture=Capture(CAPTURED, CAPTURED),
         )
+        wire = span.to_json()
         wire_dict = span.to_dict()
         cursor = wire_dict["input"]
         for _ in range(round_trip_depth):
+            self.assertIsInstance(cursor, list)
+            self.assertEqual(len(cursor), 1)
             cursor = cursor[0]
         self.assertIsNone(cursor)
-        self.assertEqual(Span.from_json(span.to_json()), span)
+        restored = Span.from_json(wire)
+        self.assertEqual(restored.to_json(), wire)
+        restored_cursor = restored.input
+        original_cursor = span.input
+        for _ in range(round_trip_depth):
+            self.assertIsInstance(original_cursor, list)
+            self.assertIsInstance(restored_cursor, list)
+            self.assertEqual(len(original_cursor), 1)
+            self.assertEqual(len(restored_cursor), 1)
+            original_cursor = original_cursor[0]
+            restored_cursor = restored_cursor[0]
+        self.assertIsNone(original_cursor)
+        self.assertIsNone(restored_cursor)
 
     def test_captureinfo_valid_families_and_invalid_combinations(self):
         valid = [
