@@ -37,6 +37,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --target .audit-runtime ".[server,openai-agents]"
 
+      - name: Exclude first-party TraceMotive from the audit target
+        run: python scripts/prepare_audit_runtime.py .audit-runtime
+
       - name: Install pip-audit
         run: python -m pip install "pip-audit==2.10.1"
 

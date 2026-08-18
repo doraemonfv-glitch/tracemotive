@@ -81,6 +81,7 @@ From a checkout, using the same commands as `.github/workflows/security.yml`:
 rm -rf .audit-runtime
 python -m pip install --upgrade pip
 python -m pip install --target .audit-runtime ".[server,openai-agents]"
+python scripts/prepare_audit_runtime.py .audit-runtime
 python -m pip install "pip-audit==2.10.1"
 python -m pip_audit --progress-spinner off --strict --path .audit-runtime
 ```
@@ -91,8 +92,10 @@ npm ci
 npm audit --audit-level=high
 ```
 
-The Python audit inspects the isolated shipped runtime dependency surface for
-the server and OpenAI Agents extras. `--strict` fails the check if dependency
+The strict Python dependency audit scans the isolated third-party shipped
+runtime dependency surface for the server and OpenAI Agents extras. First-party
+TraceMotive is excluded from that PyPI lookup surface so an unpublished
+package version can still be audited. `--strict` fails the check if dependency
 collection is incomplete. The frontend audit inspects the full lockfile,
 including development dependencies, and fails on high or critical advisories.
 There is no ignore list.

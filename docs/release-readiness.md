@@ -1,14 +1,81 @@
-# TraceMotive v0.4.1 Core release readiness
+# TraceMotive v0.5.0 release readiness
 
 This checklist is local-only. These commands build and inspect artifacts; they
 do not upload, publish, create a release, push a tag, or create a GitHub
 Release.
 
 The Python distribution and import package are both `tracemotive`, with
-package version `0.4.1`. The Canonical schema remains `0.1`, the ingest
+package version `0.5.0`. The Canonical schema remains `0.1`, the ingest
 protocol remains `1`, `/api/v1`, `/api/v2`, and `/api/v3` are preserved, and
 the additive structured-diff comparison contract is `/api/v4`. LangGraph
-remains deferred and is not part of the v0.4.1 support claim.
+is not currently supported and is not part of the v0.5.0 support claim.
+
+## v0.5.0 release notes
+
+v0.5.0 is an adoptability release. It does not add a new API namespace, change
+Canonical schema, or change ingest protocol.
+
+Find where two AI agent runs first differ in observed behavior, then jump
+directly into the supporting evidence — locally, without pretending to know
+the cause.
+
+### Added / Improved
+
+- Identified investigations can surface a bounded set of additional supported
+  observations from existing evidence. These are not downstream consequences,
+  causal chains, or later-in-time events.
+- Installed-user onboarding uses packaged `tracemotive serve` and
+  `tracemotive demo` without a checkout, Node.js, or npm at runtime.
+- Release-consistency validation keeps live current-version claims aligned
+  with `pyproject.toml`.
+- CI validates Python 3.10 and 3.12, frontend tests and production build,
+  Ruff, and release consistency.
+- Security-maintenance baseline: weekly Dependabot, isolated `pip-audit`,
+  `npm audit --audit-level=high`, and conservative threat-model documentation.
+- Compatibility, limits, and storage documentation match source-backed
+  current behavior.
+- V03-10 evidence-conservative regression remains 30 scenarios with
+  false-confident meaningful = 0 and false-confident starting point = 0.
+- Installed wheel/sdist dogfood and the V05-08 final release gate completed
+  with GO for v0.5.0 release preparation.
+
+### Important limitations
+
+- An observed divergence is evidence for investigation, not causal proof.
+- TraceMotive does not provide RCA, confidence scoring, reconvergence,
+  recovery detection, or harmlessness detection.
+- Loopback is not authentication. Local SQLite is not encrypted at rest.
+- There is no automatic retention policy.
+- LangGraph is not currently supported.
+- No formal security audit has been completed. Point-in-time dependency
+  audits being clean is not a permanent security guarantee.
+
+### V05-08 pre-release evidence
+
+Recorded against commit `7c47b9f5f22972a80ab9233489db363ef7f1f004` before this
+version-preparation bump. Local Windows environmental limitations are not
+converted to PASS.
+
+| Check | Result |
+|---|---|
+| Wheel install outside checkout | PASS |
+| Sdist install outside checkout | PASS |
+| Packaged UI from installed artifact | PASS |
+| Identified demo | PASS |
+| Uncertain demo | PASS |
+| OpenAI Agents resolved version | `0.17.8` in `>=0.17,<0.18` |
+| Isolated Python `pip-audit --strict` | PASS |
+| `npm audit --audit-level=high` | PASS |
+| V03-10 oracle | 30 scenarios; meaningful 15/6/9; starting 14/7/9 |
+| False-confident meaningful | 0 |
+| False-confident starting point | 0 |
+| GitHub Actions Python 3.10 / 3.12 | PASS |
+| Frontend tests / production build | PASS |
+| Private Vulnerability Reporting setting | MANUAL VERIFICATION |
+| Local Windows esbuild packaging bootstrap | known local-only limitation; Ubuntu CI is authoritative |
+
+The historical v0.4.1 and v0.4.0 notes below are preserved as historical
+release evidence. They are not current package-version claims.
 
 ## v0.4.1 release notes
 

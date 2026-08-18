@@ -122,9 +122,12 @@ Not currently solved:
 ## Dependency automation
 
 V05-05 adds weekly Dependabot updates and automated `pip-audit` /
-`npm audit` checks. The Python check audits the isolated shipped runtime
-dependency surface for the server and OpenAI Agents extras. Those checks make
-known dependency advisories visible. They are not a formal security audit.
+`npm audit` checks. The strict Python dependency audit scans the isolated
+third-party shipped runtime dependency surface for the server and OpenAI
+Agents extras. First-party TraceMotive is excluded from that PyPI lookup
+surface; pip-audit does not statically audit TraceMotive source. Those checks
+make known third-party dependency advisories visible. They are not a formal
+security audit.
 
 No formal security audit has been completed.
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 import unittest
+
+from scripts.prepare_audit_runtime import AuditRuntimeError, prepare_audit_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,12 +36,22 @@ class SecurityBaselineTests(unittest.TestCase):
         self.assertNotIn("pull-requests: write", self.workflow)
         self.assertNotIn("packages: write", self.workflow)
         self.assertIn('python -m pip install --target .audit-runtime ".[server,openai-agents]"', self.workflow)
+        self.assertIn("python scripts/prepare_audit_runtime.py .audit-runtime", self.workflow)
         self.assertIn('python -m pip install "pip-audit==2.10.1"', self.workflow)
         self.assertIn("python -m pip_audit --progress-spinner off --strict --path .audit-runtime", self.workflow)
+        self.assertNotIn("--ignore-vuln", self.workflow)
         self.assertNotIn("python -m venv .audit-runtime", self.workflow)
         self.assertNotIn("npm audit fix", self.workflow)
         self.assertNotIn("github/codeql-action", self.workflow)
         self.assertNotIn("dependency-review-action", self.workflow)
+        self.assertLess(
+            self.workflow.index('python -m pip install --target .audit-runtime ".[server,openai-agents]"'),
+            self.workflow.index("python scripts/prepare_audit_runtime.py .audit-runtime"),
+        )
+        self.assertLess(
+            self.workflow.index("python scripts/prepare_audit_runtime.py .audit-runtime"),
+            self.workflow.index("python -m pip_audit --progress-spinner off --strict --path .audit-runtime"),
+        )
 
     def test_dependabot_covers_used_ecosystems_weekly_without_automerge(self) -> None:
         self.assertIn("package-ecosystem: pip", self.dependabot)
@@ -67,16 +80,77 @@ class SecurityBaselineTests(unittest.TestCase):
         self.assertIn("CodeQL, GitHub dependency-review, and SBOM generation remain deferred P1 work.", self.model)
         collapsed_security = " ".join(self.security.split())
         collapsed_model = " ".join(self.model.split())
-        self.assertIn("isolated shipped runtime dependency surface", collapsed_security)
-        self.assertIn("isolated shipped runtime dependency surface", collapsed_model)
+        self.assertIn(
+            "isolated third-party shipped runtime dependency surface",
+            collapsed_security,
+        )
+        self.assertIn(
+            "isolated third-party shipped runtime dependency surface",
+            collapsed_model,
+        )
+        self.assertIn("First-party TraceMotive is excluded from that PyPI lookup surface", collapsed_security)
+        self.assertIn("First-party TraceMotive is excluded from that PyPI lookup surface", collapsed_model)
 
     def test_documented_commands_match_the_security_workflow(self) -> None:
         for text in (self.security, self.contributing):
             self.assertIn('python -m pip install --target .audit-runtime ".[server,openai-agents]"', text)
+            self.assertIn("python scripts/prepare_audit_runtime.py .audit-runtime", text)
             self.assertIn('python -m pip install "pip-audit==2.10.1"', text)
             self.assertIn("python -m pip_audit --progress-spinner off --strict --path .audit-runtime", text)
             self.assertIn("npm audit --audit-level=high", text)
+            self.assertNotIn("--ignore-vuln", text)
             self.assertNotIn("python -m venv .audit-runtime", text)
+
+    def test_prepare_audit_runtime_excludes_only_first_party_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            for name, dist_name in (
+                ("tracemotive-0.5.0.dist-info", "tracemotive"),
+                ("fastapi-0.141.1.dist-info", "fastapi"),
+                ("uvicorn-0.52.3.dist-info", "uvicorn"),
+                ("openai_agents-0.17.8.dist-info", "openai-agents"),
+            ):
+                info = target / name
+                info.mkdir()
+                (info / "METADATA").write_text(f"Name: {dist_name}\nVersion: 0.0\n", encoding="utf-8")
+            names = prepare_audit_runtime(target)
+            self.assertEqual(names, ("fastapi", "openai-agents", "uvicorn"))
+            self.assertFalse((target / "tracemotive-0.5.0.dist-info").exists())
+            self.assertTrue((target / "fastapi-0.141.1.dist-info").exists())
+
+    def test_prepare_audit_runtime_rejects_missing_or_duplicate_first_party(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            info = target / "fastapi-0.141.1.dist-info"
+            info.mkdir()
+            (info / "METADATA").write_text("Name: fastapi\n", encoding="utf-8")
+            with self.assertRaises(AuditRuntimeError):
+                prepare_audit_runtime(target)
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            for name in ("tracemotive-0.5.0.dist-info", "tracemotive-0.4.1.dist-info"):
+                info = target / name
+                info.mkdir()
+                (info / "METADATA").write_text("Name: tracemotive\n", encoding="utf-8")
+            with self.assertRaises(AuditRuntimeError):
+                prepare_audit_runtime(target)
+
+    def test_prepare_audit_runtime_rejects_installer_or_scanner_tooling(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            for name, dist_name in (
+                ("tracemotive-0.5.0.dist-info", "tracemotive"),
+                ("fastapi-0.141.1.dist-info", "fastapi"),
+                ("pip-26.2.1.dist-info", "pip"),
+            ):
+                info = target / name
+                info.mkdir()
+                (info / "METADATA").write_text(f"Name: {dist_name}\n", encoding="utf-8")
+            with self.assertRaises(AuditRuntimeError):
+                prepare_audit_runtime(target)
+
+
 
 
 if __name__ == "__main__":

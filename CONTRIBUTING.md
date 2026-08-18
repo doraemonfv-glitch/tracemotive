@@ -9,7 +9,7 @@ additive TraceMotive v0.4 Core implementation through the accepted bootstrap,
 packaging, cockpit, structured-diff, onboarding, and identified/uncertain-demo
 issues. The frozen implementation design is under [docs/v0.4](docs/v0.4/).
 
-The package metadata is `0.4.1` for the current release candidate. Version
+The package metadata is `0.5.0` for the current release candidate. Version
 bumps and publication remain explicit release tasks.
 
 `AGENTS.md` contains repository implementation rules.
@@ -99,6 +99,7 @@ Security checks, matching `.github/workflows/security.yml`:
 rm -rf .audit-runtime
 python -m pip install --upgrade pip
 python -m pip install --target .audit-runtime ".[server,openai-agents]"
+python scripts/prepare_audit_runtime.py .audit-runtime
 python -m pip install "pip-audit==2.10.1"
 python -m pip_audit --progress-spinner off --strict --path .audit-runtime
 ```
@@ -123,10 +124,11 @@ The product CI workflow has three jobs:
 - Ruff plus the V05-03 release-consistency checks.
 
 A separate `.github/workflows/security.yml` workflow runs weekly, on `main`,
-and on pull requests targeting `main`. It audits the isolated shipped runtime
-dependency surface for the server and OpenAI Agents extras with
-`pip-audit==2.10.1 --strict` and the frontend lockfile with
-`npm audit --audit-level=high`.
+and on pull requests targeting `main`. It audits the isolated third-party
+shipped runtime dependency surface for the server and OpenAI Agents extras
+with `pip-audit==2.10.1 --strict` and the frontend lockfile with
+`npm audit --audit-level=high`. First-party TraceMotive is excluded from that
+PyPI lookup surface.
 
 CI does not require secrets or an OpenAI API key. A passing CI run is a basic
 requirement for a pull request.
