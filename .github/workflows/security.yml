@@ -1,0 +1,66 @@
+name: Security
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-dependency-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements.txt
+
+      - name: Install shipped extras into an isolated target
+        run: |
+          rm -rf .audit-runtime
+          python -m pip install --upgrade pip
+          python -m pip install --target .audit-runtime ".[server,openai-agents]"
+
+      - name: Install pip-audit
+        run: python -m pip install "pip-audit==2.10.1"
+
+      - name: Audit isolated shipped runtime dependencies
+        run: python -m pip_audit --progress-spinner off --strict --path .audit-runtime
+
+  frontend-dependency-audit:
+    name: Frontend dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Audit frontend lockfile
+        working-directory: frontend
+        run: npm audit --audit-level=high

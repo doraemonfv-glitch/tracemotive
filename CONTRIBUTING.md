@@ -88,15 +88,40 @@ cd frontend
 npm test
 ```
 
+Security checks, matching `.github/workflows/security.yml`:
+
+```text
+rm -rf .audit-runtime
+python -m pip install --upgrade pip
+python -m pip install --target .audit-runtime ".[server,openai-agents]"
+python -m pip install "pip-audit==2.10.1"
+python -m pip_audit --progress-spinner off --strict --path .audit-runtime
+```
+
+```text
+cd frontend
+npm ci
+npm audit --audit-level=high
+```
+
+These commands detect known dependency advisories. They are not a formal
+security audit. CodeQL, dependency-review, and SBOM generation remain deferred.
+
 ## Continuous integration
 
 GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
-The workflow has three jobs:
+The product CI workflow has three jobs:
 
 - Python tests on Python 3.10 and 3.12, including the repository dependencies and
   packaging tools.
 - Frontend tests and a production build on Node.js 22.12.0.
 - Ruff plus the V05-03 release-consistency checks.
+
+A separate `.github/workflows/security.yml` workflow runs weekly, on `main`,
+and on pull requests targeting `main`. It audits the isolated shipped runtime
+dependency surface for the server and OpenAI Agents extras with
+`pip-audit==2.10.1 --strict` and the frontend lockfile with
+`npm audit --audit-level=high`.
 
 CI does not require secrets or an OpenAI API key. A passing CI run is a basic
 requirement for a pull request.
@@ -156,6 +181,6 @@ security-related changes, describe the impact and the validation performed.
 ## Security
 
 Do not post suspected security vulnerabilities in a public Issue or pull
-request. Do not publish secrets or personal data. Formal security reporting
-guidance will be defined separately; do not use public contribution channels
-for sensitive reports.
+request. Do not publish secrets or personal data. Read [SECURITY.md](SECURITY.md)
+and use GitHub Private Vulnerability Reporting from the repository Security
+page. The local-first threat model is in [docs/security-model.md](docs/security-model.md).

@@ -9,6 +9,9 @@ Desktop.ini
 *.swp
 *~
 
+# Isolated V05-05 Python audit environment
+.audit-runtime/
+
 # Local environment and secret files
 .env
 .env.*

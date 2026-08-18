@@ -247,9 +247,11 @@ instrumented Agent execution.
 - Provider traffic, such as an OpenAI model request, is separate from
   TraceMotive telemetry and may leave the machine.
 
-Do not treat these statements as a formal security audit. For sensitive
-reports, read [SECURITY.md](SECURITY.md) and use GitHub Private Vulnerability
-Reporting rather than a public issue.
+Do not treat these statements as a formal security audit. Loopback is not
+authentication. For the local-first threat model, storage locations, and
+redaction limits, read [docs/security-model.md](docs/security-model.md). For
+sensitive reports, read [SECURITY.md](SECURITY.md) and use GitHub Private
+Vulnerability Reporting rather than a public issue.
 
 ## Compatibility and documentation layers
 
