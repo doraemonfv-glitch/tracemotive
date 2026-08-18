@@ -27,7 +27,7 @@ server = [
     "uvicorn>=0.30,<1",
 ]
 openai-agents = [
-    "openai-agents>=0.17,<0.18",
+    "openai-agents>=0.17,<0.22",
 ]
 dev = [
     "tomli>=2.0.1,<3; python_version < '3.11'",
