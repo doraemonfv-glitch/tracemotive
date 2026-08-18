@@ -399,6 +399,51 @@ class DivergenceEvaluationTests(unittest.TestCase):
         self.assertEqual(bad.meaningful_divergence, 1)
         self.assertEqual(bad.investigation_starting_point, 1)
 
+    def test_v05_07_oracle_honesty_is_derived_from_individual_scenarios(self) -> None:
+        meaningful = {state: 0 for state in DIVERGENCE_STATES}
+        starting = {state: 0 for state in STARTING_POINT_STATES}
+        for scenario in self.scenarios:
+            with self.subTest(scenario=scenario.name):
+                self.assertIn(scenario.name, MANDATORY_SCENARIOS)
+                meaningful[scenario.meaningful_divergence] += 1
+                starting[scenario.investigation_starting_point] += 1
+                if scenario.meaningful_divergence != "supported":
+                    self.assertNotEqual(scenario.investigation_starting_point, "supported")
+                if scenario.name in {
+                    "identical_runs",
+                    "model_only_change",
+                    "request_parameter_only_change",
+                    "trace_status_only_change",
+                    "framework_metadata_only_difference",
+                }:
+                    self.assertEqual(scenario.meaningful_divergence, "none")
+                    self.assertEqual(scenario.investigation_starting_point, "none")
+                if scenario.uncertainty_barrier == "repeated_sibling_ambiguity":
+                    self.assertEqual(scenario.meaningful_divergence, "uncertain")
+                    self.assertEqual(scenario.investigation_starting_point, "uncertain")
+
+        self.assertEqual(len(self.scenarios), 30)
+        self.assertEqual(set(MANDATORY_SCENARIOS), {scenario.name for scenario in self.scenarios})
+        self.assertEqual(meaningful, {"supported": 15, "uncertain": 6, "none": 9})
+        self.assertEqual(starting, {"supported": 14, "uncertain": 7, "none": 9})
+        self.assertLess(starting["supported"], meaningful["supported"])
+
+    def test_supported_early_divergence_does_not_claim_later_outcome_or_recovery(self) -> None:
+        scenario = self.by_name["error_before_later_structural_difference"]
+        self.assertEqual(scenario.meaningful_divergence, "supported")
+        self.assertEqual(scenario.investigation_starting_point, "supported")
+        notes = scenario.notes.casefold()
+        for token in (
+            "cause",
+            "root cause",
+            "recovered",
+            "reconverged",
+            "harmless",
+            "downstream",
+            "led to",
+        ):
+            self.assertNotIn(token, notes)
+
 
 if __name__ == "__main__":
     unittest.main()
