@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import re
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,9 +31,7 @@ DEVELOPMENT_DOCUMENT_PATHS = (
     ROOT / "examples" / "README.md",
 )
 
-_PYPROJECT_VERSION = re.compile(
-    r'(?m)^version\s*=\s*"(?P<version>[^"]+)"\s*$',
-)
+
 _README_HEADING = re.compile(r"(?m)^(?P<heading>## .+)$")
 _STALE_PUBLICATION = re.compile(
     r"has not been published|not yet published|is not yet published|"
@@ -63,12 +65,19 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _project_table(root: Path = ROOT) -> dict[str, object]:
+    data = tomllib.loads(read_text(root / "pyproject.toml"))
+    project = data.get("project")
+    if not isinstance(project, dict):
+        raise AssertionError("pyproject.toml [project] table is missing")
+    return project
+
+
 def package_version(root: Path = ROOT) -> str:
-    text = read_text(root / "pyproject.toml")
-    match = _PYPROJECT_VERSION.search(text)
-    if match is None:
+    version = _project_table(root).get("version")
+    if not isinstance(version, str) or not version:
         raise AssertionError("pyproject.toml project.version could not be read deterministically")
-    return match.group("version")
+    return version
 
 
 def frontend_package_version(root: Path = ROOT) -> str:
@@ -94,8 +103,7 @@ def frontend_lockfile_root_version(root: Path = ROOT) -> tuple[str, str]:
 
 
 def pypi_long_description_source(root: Path = ROOT) -> str:
-    data = tomllib.loads(read_text(root / "pyproject.toml"))
-    readme = data.get("project", {}).get("readme")
+    readme = _project_table(root).get("readme")
     if not isinstance(readme, str) or not readme:
         raise AssertionError("pyproject.toml project.readme is missing")
     return readme

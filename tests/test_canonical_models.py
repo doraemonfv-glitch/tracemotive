@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from tracemotive.canonical.models import _parse_timestamp
 from tracemotive.canonical import (
     AGENTLENS_SCHEMA_VERSION,
     AgentDetails,
@@ -413,6 +414,12 @@ class CanonicalModelTests(unittest.TestCase):
             with self.subTest(fraction=fraction):
                 timestamp = f"2026-08-10T13:00:00{fraction}Z"
                 self.assertEqual(validate_timestamp(timestamp), timestamp)
+                parsed = _parse_timestamp(timestamp, "timestamp")[1]
+                self.assertEqual(parsed.tzinfo.utcoffset(parsed).total_seconds(), 0)
+                if fraction == "":
+                    self.assertEqual(parsed.microsecond, 0)
+                else:
+                    self.assertEqual(parsed.microsecond, int(fraction[1:].ljust(6, "0")))
         for invalid in (
             "2026-08-10T13:00:00z",
             "2026-08-10T13:00:00+00:00",

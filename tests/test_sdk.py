@@ -556,18 +556,23 @@ class SDKTests(unittest.TestCase):
     def test_context_isolation_for_async_tasks_and_threads(self):
         tracemotive.configure(enabled=True)
 
-        async def task_body(label, barrier):
+        async def task_body(label, entered, release):
             with tracemotive.trace(label):
                 trace_id = sdk.current_trace().trace_id
-                await barrier.wait()
+                entered.set()
+                await release.wait()
                 with tracemotive.span(label) as handle:
                     parent = handle.parent_span_id
                 return trace_id, parent
 
         async def run_tasks():
-            barrier = asyncio.Barrier(2)
-            first = asyncio.create_task(task_body("one", barrier))
-            second = asyncio.create_task(task_body("two", barrier))
+            first_entered = asyncio.Event()
+            second_entered = asyncio.Event()
+            release = asyncio.Event()
+            first = asyncio.create_task(task_body("one", first_entered, release))
+            second = asyncio.create_task(task_body("two", second_entered, release))
+            await asyncio.gather(first_entered.wait(), second_entered.wait())
+            release.set()
             return await asyncio.gather(first, second)
 
         task_results = asyncio.run(run_tasks())

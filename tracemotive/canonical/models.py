@@ -256,10 +256,25 @@ def _parse_timestamp(value: Any, field_name: str) -> tuple[str, datetime]:
     if int(value[11:13]) > 23:
         _fail(f"{field_name} is not a valid timestamp")
     try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+        parsed = datetime.fromisoformat(_isoformat_utc(value))
     except ValueError as exc:
         raise ValidationError(f"{field_name} is not a valid timestamp") from exc
     return value, parsed
+
+
+def _isoformat_utc(value: str) -> str:
+    """Return a UTC ISO-8601 form accepted by datetime.fromisoformat on Python 3.10+.
+
+    Canonical timestamps remain RFC 3339 ``Z`` strings with at most microseconds.
+    Python 3.10 rejects some shorter fractional-second lengths that newer CPython
+    accepts, so pad an existing fraction to microseconds without changing digits.
+    """
+
+    body = value[:-1]
+    if "." not in body:
+        return body + "+00:00"
+    date_time, fraction = body.split(".", 1)
+    return f"{date_time}.{fraction.ljust(6, '0')}+00:00"
 
 
 def validate_timestamp(value: Any, *, field_name: str = "timestamp") -> CanonicalTimestamp:

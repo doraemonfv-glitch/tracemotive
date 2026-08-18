@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from importlib.resources.abc import Traversable
+try:
+    from importlib.resources.abc import Traversable
+except ModuleNotFoundError:  # Python 3.10
+    from importlib.abc import Traversable
 from typing import Any
 
 from starlette.responses import Response

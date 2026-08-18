@@ -156,6 +156,25 @@ class ReleaseConsistencyTests(unittest.TestCase):
     def test_pypi_long_description_source_is_readme(self) -> None:
         self.assertEqual(pypi_long_description_source(), "README.md")
 
+    def test_pypi_long_description_source_uses_project_readme_table(self) -> None:
+        from tempfile import TemporaryDirectory
+        from tests.release_consistency import pypi_long_description_source as read_readme
+
+        decoy = (
+            "[tool.decoy]\n"
+            'readme = "WRONG.md"\n\n'
+            "[project]\n"
+            'name = "tracemotive"\n'
+            'version = "0.4.1"\n'
+            'readme = "README.md"\n\n'
+            "[tool.other]\n"
+            'readme = "ALSO-WRONG.md"\n'
+        )
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pyproject.toml").write_text(decoy, encoding="utf-8")
+            self.assertEqual(read_readme(root), "README.md")
+
     def test_live_docs_have_no_stale_current_publication_wording(self) -> None:
         for path, text in self.live.items():
             stale = find_stale_publication_claims(text)
