@@ -1,6 +1,6 @@
 # OpenAI Agents SDK integration
 
-TraceMotive v0.5.0 supports the OpenAI Agents SDK range `>=0.17,<0.18`. The
+TraceMotive v0.5.1 supports the OpenAI Agents SDK range `>=0.17,<0.18`. The
 package extra is optional; core `import tracemotive` does not import or require
 the `agents` package. The range was compatibility-tested at 0.17.0, 0.17.4,
 and 0.17.8 for the adapter callbacks, span-data fields, processor registration
@@ -49,6 +49,10 @@ Installing the integration does not enable TraceMotive. Configure the core SDK
 separately if tracing should produce TraceMotive events. Without the optional
 `openai-agents` package, importing `tracemotive` remains valid, while calling
 this integration boundary raises a deterministic configuration error.
+
+With `capture_content=False`, framework tool input/output content is not sent to
+TraceMotive. Comparisons may show `capture_unavailable` for that evidence even
+when status, error, structure, or approved metadata observations are available.
 
 `local_only=True` controls framework tracing processors. It does not make model
 traffic local. A provider request may still leave the machine.

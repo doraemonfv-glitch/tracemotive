@@ -79,8 +79,14 @@ class DocumentationTests(unittest.TestCase):
             f"- {expected_starting_points} have an expected supported investigation starting point;",
             self.readme,
         )
-        self.assertIn("false-confident meaningful-divergence target/result", self.readme)
-        self.assertIn("false-confident investigation-starting-point target/result", self.readme)
+        self.assertIn("production-backed regression measures false-confident meaningful", self.readme)
+        self.assertIn(
+            "production-backed regression measures false-confident investigation",
+            self.readme,
+        )
+        self.assertIn("tests.test_v0310_production_regression", self.readme)
+        self.assertIn("15/15 meaningful cases", self.readme)
+        self.assertIn("14/14 starting-point cases", self.readme)
 
     def test_public_docs_describe_the_current_specification_layers(self) -> None:
         for path in (

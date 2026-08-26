@@ -79,25 +79,36 @@ corpus**. In that 30-scenario corpus:
 - 30 scenarios are mandatory;
 - 15 have an expected confident meaningful-divergence answer;
 - 14 have an expected supported investigation starting point;
-- the false-confident meaningful-divergence target/result for a conforming
-  outcome set is 0; and
-- the false-confident investigation-starting-point target/result for a
-  conforming outcome set is 0.
+- the production-backed regression measures false-confident meaningful
+  divergence at `0`; and
+- the production-backed regression measures false-confident investigation
+  starting points at `0`.
 
 The corpus is intended to exercise ambiguity, incomplete traces,
 capture/redaction barriers, repeated tools, context-only changes, and
-structural divergence ordering. These are corpus-scoped oracle facts, not a
-universal accuracy guarantee, confidence percentage, causal claim, or
-independent benchmark.
+structural divergence ordering. These are fixed-corpus results, not a universal
+accuracy guarantee, confidence percentage, causal claim, or independent
+benchmark.
 
-The reproducible oracle checks are:
+The production-backed regression runs all 30 scenarios against the production
+comparison and investigation engine. Twenty-nine scenarios use Collector ingest,
+SQLite persistence, and `/api/v3`. One deliberately malformed repeated-span-ID
+fixture cannot retain its duplicated member under the v0.1 storage primary key
+and uses the direct persisted-read-model builder instead. The regression checks
+states, selected paths, uncertainty barriers, and forbidden confident candidates.
+Useful-answer coverage is 15/15 meaningful cases and 14/14 starting-point cases.
+
+Reproducible checks are:
 
 ```text
 python -m unittest tests.test_divergence_evaluation -v
+python -m unittest tests.test_v0310_production_regression -v
 python -m tests.divergence_evaluation
 ```
 
 The full report is [the v0.3 divergence evaluation](docs/divergence-evaluation-v0.3.md).
+These results are limited to that fixed corpus and do not promise accuracy for
+other traces, frameworks, tasks, or failure modes.
 
 ## Supported integration
 
@@ -136,6 +147,11 @@ Generic Python support is manual instrumentation through the public
 `configure`, `trace`, `span`, and `flush` SDK. It is not an automatic
 framework adapter.
 
+With `capture_content=False`, tool input/output values are intentionally absent.
+A comparison can still use status/error, structure, and supported metadata, but
+content-level evidence may be reported as `capture_unavailable` rather than
+guessed. Content capture remains an explicit local opt-in.
+
 LangGraph is not currently supported.
 
 See the [OpenAI Agents integration notes](docs/openai-agents.md) for the
@@ -144,7 +160,7 @@ source-checkout documentation only.
 
 ## Install a released package
 
-The current package version is `0.5.0`. For a normal installation:
+The current package version is `0.5.1`. For a normal installation:
 
 ```text
 python -m pip install tracemotive
@@ -279,7 +295,7 @@ The repository intentionally keeps these layers separate:
 |---|---|
 | `spec/v0.1-frozen-spec.md` | Historical Frozen compatibility contract for Canonical schema, ingest, privacy, transport, and v1 behavior. It remains authoritative and unchanged. |
 | `spec/v0.2-proposed-spec.md` and `spec/v0.3-proposed-spec.md` | Historical proposed design documents; they are not permission to rewrite the v0.1 contract. |
-| Package metadata | `0.5.0` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
+| Package metadata | `0.5.1` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
 | Canonical and ingest | Canonical schema `0.1`; ingest protocol `1`. |
 | Query APIs | TraceMotive currently exposes `/api/v1`, `/api/v2`, `/api/v3`, and `/api/v4`. `/api/v3` provides the investigation comparison surface, and `/api/v4/compare/{left}/{right}` provides the structured-diff projection. |
 | `docs/v0.4/` | Frozen-for-implementation v0.4 design and release requirements; it is not itself a package-version or release declaration. |
