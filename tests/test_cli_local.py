@@ -453,7 +453,6 @@ class CompareCliContractTests(unittest.TestCase):
 
     def test_cli_error_status_mapping(self) -> None:
         from tracemotive.cli import main
-        from tracemotive.local_client import TransportFailureError
 
         code, _, errors = _capture_handler(
             lambda: main(["compare", LEFT_ID, RIGHT_ID, "--endpoint", "http://example.com"])
