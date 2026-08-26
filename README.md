@@ -75,6 +75,8 @@ tracemotive last TRACE_NAME [--endpoint URL] [--json] [--open]
 - `last` matches only the exact trace name, uses the two newest matches in one
   query sequence at invocation time, sets the older run to left and newer run
   to right, and does not provide an atomic latest guarantee.
+- If those two matches have the same `started_at`, `last` does not infer their
+  order from `trace_id`; it fails and asks for explicit `tracemotive compare`.
 - `--endpoint` accepts only an existing HTTP loopback TraceMotive server.
 - `--json` writes the existing `/api/v3` response to stdout without adding a
   new schema; diagnostics go to stderr.

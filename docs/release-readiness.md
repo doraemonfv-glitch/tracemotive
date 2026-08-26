@@ -30,6 +30,8 @@ workflow without changing Canonical data, ingest, storage, or API contracts.
 
 - `last` has no atomic latest guarantee and never infers identity from
   substrings, case, arguments, timestamps, or framework IDs.
+- When the two selected exact-name matches have identical `started_at`, `last`
+  does not use `trace_id` as a time-order claim and fails closed.
 - `--json` is not a new envelope or schema.
 - An observed starting point remains evidence for investigation, not causal
   proof.

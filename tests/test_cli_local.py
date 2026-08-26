@@ -269,6 +269,19 @@ class LastSelectionTests(unittest.TestCase):
             selection = select_last_pair("Order run")
         self.assertEqual((selection.left.trace_id, selection.right.trace_id), (LEFT_ID, RIGHT_ID))
 
+    def test_equal_started_at_refuses_to_infer_older_newer(self) -> None:
+        first = _summary(LEFT_ID, "Order run", "2026-01-01T00:00:00Z")
+        second = _summary(RIGHT_ID, "Order run", "2026-01-01T00:00:00Z")
+        with patch(
+            "tracemotive.local_client.HTTPConnection",
+            return_value=_http_json(_list_page([first, second], 2)),
+        ):
+            with self.assertRaisesRegex(
+                ApiContractError,
+                r"same started_at.*cannot infer which is older.*compare LEFT RIGHT",
+            ):
+                select_last_pair("Order run")
+
     def test_substring_and_case_matches_are_not_paired(self) -> None:
         items = [
             _summary("c" * 32, "Order run changed", "2026-01-03T00:00:00Z"),

@@ -195,6 +195,13 @@ def select_last_pair(
         )
 
     newest, older = matches
+    if newest.started_at == older.started_at:
+        raise ApiContractError(
+            "the two newest exact-name traces have the same started_at; "
+            "TraceMotive cannot infer which is older; "
+            "use: tracemotive compare LEFT RIGHT"
+        )
+
     return LastSelection(left=older, right=newest)
 
 
