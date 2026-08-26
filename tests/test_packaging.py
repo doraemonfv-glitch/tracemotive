@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -519,6 +520,8 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
         with zipfile.ZipFile(self._wheel) as archive:
             names = archive.namelist()
             self.assertIn("tracemotive/__init__.py", names)
+            self.assertIn("tracemotive/cli.py", names)
+            self.assertIn("tracemotive/local_client.py", names)
             self.assertIn("tracemotive/storage/migrations.py", names)
             self.assertIn("tracemotive/ui/__init__.py", names)
             self.assertIn("tracemotive/ui/server.py", names)
@@ -555,6 +558,11 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
                 metadata.get_all("Project-URL"),
                 _expected_project_url_headers(),
             )
+            entry_points = archive.read(
+                f"tracemotive-{version}.dist-info/entry_points.txt"
+            ).decode("utf-8")
+            self.assertIn("[console_scripts]", entry_points)
+            self.assertIn("tracemotive = tracemotive.cli:main", entry_points)
             requires = metadata.get_all("Requires-Dist")
             self.assertIn("fastapi<1,>=0.110", requires)
             self.assertIn('uvicorn<1,>=0.30; extra == "server"', requires)
@@ -587,6 +595,8 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             self.assertIn('openai-agents<0.18,>=0.17; extra == "openai-agents"', sdist_requires)
             self.assertIn(f"{sdist_root}/LICENSE", names)
             self.assertIn(f"{sdist_root}/tracemotive/__init__.py", names)
+            self.assertIn(f"{sdist_root}/tracemotive/cli.py", names)
+            self.assertIn(f"{sdist_root}/tracemotive/local_client.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/storage/migrations.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/ui/__init__.py", names)
             self.assertIn(f"{sdist_root}/tracemotive/ui/server.py", names)
@@ -747,6 +757,241 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             port = probe.getsockname()[1]
         result = self._run_installed(_installed_persistence_script(port))
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_installed_wheel_real_sdk_cli_compare_last_capture_off(self) -> None:
+        """Exercise the distributed wheel with SDK ingest and the public CLI."""
+
+        self.assertTrue(self._source_checkout_removed)
+        executable = self._venv / (
+            Path("Scripts") / "tracemotive.exe" if os.name == "nt" else Path("bin") / "tracemotive"
+        )
+        self.assertTrue(executable.is_file(), executable)
+
+        installed_help = subprocess.run(
+            [str(executable), "--help"],
+            cwd=self._run_root,
+            env=_clean_subprocess_environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        self.assertEqual(installed_help.returncode, 0, installed_help.stderr)
+        for command in ("compare", "last", "serve", "demo"):
+            self.assertIn(command, installed_help.stdout)
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        endpoint = f"http://127.0.0.1:{port}"
+        environment = _clean_subprocess_environment()
+        environment["PATH"] = str(executable.parent)
+        server = subprocess.Popen(
+            [str(executable), "serve", "--db", ":memory:", "--port", str(port)],
+            cwd=self._run_root,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while True:
+                if server.poll() is not None:
+                    self.fail(server.stderr.read())
+                try:
+                    with urllib.request.urlopen(endpoint + "/api/v1/health", timeout=1) as response:
+                        self.assertEqual(response.status, 200)
+                    break
+                except Exception:
+                    if time.monotonic() >= deadline:
+                        self.fail("installed TraceMotive server did not become ready")
+                    time.sleep(0.1)
+
+            seed_result = self._run_installed(
+                f"""
+                import importlib.metadata
+                import json
+                import pathlib
+                import site
+                import time
+                import urllib.request
+
+                import tracemotive
+                from tracemotive.canonical import ToolDetails
+
+                package_root = pathlib.Path(tracemotive.__file__).resolve().parent.parent
+                assert any(package_root.is_relative_to(pathlib.Path(item).resolve()) for item in site.getsitepackages())
+                assert importlib.metadata.version("tracemotive") == {package_version()!r}
+
+                endpoint = {endpoint!r}
+                trace_name = "Installed CLI comparison run"
+                tracemotive.configure(
+                    enabled=True,
+                    endpoint=endpoint,
+                    capture_content=False,
+                )
+
+                def create_run(run_number):
+                        with tracemotive.trace(trace_name):
+                            with tracemotive.span(
+                                "installed work",
+                                type="tool",
+                                operation="tool.call",
+                                details=ToolDetails("tool", "installed work", "installed-work-1"),
+                                input={{"attempt": run_number}},
+                            ) as work:
+                                work.set_output({{"observed": "completed"}})
+
+                            if run_number == 2:
+                                with tracemotive.span(
+                                    "installed escalation",
+                                    type="tool",
+                                    operation="tool.call",
+                                    details=ToolDetails("tool", "installed escalation", "installed-escalation-1"),
+                                    input={{"attempt": run_number}},
+                                ) as escalation:
+                                    escalation.set_output({{"recorded": True}})
+
+                create_run(1)
+                create_run(2)
+                assert tracemotive.flush(timeout_seconds=5)
+
+                deadline = time.monotonic() + 5
+                while True:
+                    with urllib.request.urlopen(endpoint + "/api/v1/traces?limit=100") as response:
+                        listing = json.loads(response.read().decode("utf-8"))
+                    matches = [item for item in listing["items"] if item["name"] == trace_name]
+                    if len(matches) >= 2 and all(item["span_count"] > 0 for item in matches[:2]):
+                        break
+                    assert time.monotonic() < deadline, "SDK spans did not become queryable"
+                    time.sleep(0.1)
+                print(json.dumps({{"older": matches[1]["trace_id"], "newer": matches[0]["trace_id"]}}))
+                """
+            )
+            self.assertEqual(seed_result.returncode, 0, seed_result.stderr)
+            identifiers = json.loads(seed_result.stdout.strip().splitlines()[-1])
+            older = identifiers["older"]
+            newer = identifiers["newer"]
+            self.assertNotEqual(older, newer)
+
+            last_json = subprocess.run(
+                [
+                    str(executable),
+                    "last",
+                    "Installed CLI comparison run",
+                    "--endpoint",
+                    endpoint,
+                    "--json",
+                ],
+                cwd=self._run_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertEqual(last_json.returncode, 0, last_json.stderr)
+            self.assertEqual(last_json.stderr, "")
+            payload = json.loads(last_json.stdout)
+            self.assertEqual(payload["comparison_version"], "0.3")
+            self.assertEqual(payload["left_trace"]["trace_id"], older)
+            self.assertEqual(payload["right_trace"]["trace_id"], newer)
+            self.assertEqual(payload["investigation"]["state"], "identified")
+            self.assertIsNotNone(payload["investigation"]["starting_point"])
+
+            compare_json = subprocess.run(
+                [
+                    str(executable),
+                    "compare",
+                    older,
+                    newer,
+                    "--endpoint",
+                    endpoint,
+                    "--json",
+                ],
+                cwd=self._run_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertEqual(compare_json.returncode, 0, compare_json.stderr)
+            self.assertEqual(compare_json.stderr, "")
+            self.assertEqual(compare_json.stdout, last_json.stdout)
+
+            compare_human = subprocess.run(
+                [
+                    str(executable),
+                    "compare",
+                    older,
+                    newer,
+                    "--endpoint",
+                    endpoint,
+                ],
+                cwd=self._run_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertEqual(compare_human.returncode, 0, compare_human.stderr)
+            for expected in (
+                f"left:  {older}",
+                f"right: {newer}",
+                "Look here:",
+                "What changed:",
+                "observation=confirmed_observation type=tool_added",
+                "Evidence limitation / Unknowns:",
+                "No uncertainty records were returned.",
+                f"http://127.0.0.1:{port}/#/compare/{older}/{newer}",
+                "does not establish cause",
+            ):
+                self.assertIn(expected, compare_human.stdout)
+
+            open_boundary = self._run_installed(
+                f"""
+                import json
+                from unittest.mock import patch
+                from tracemotive.local_client import open_comparison
+
+                identifiers = {identifiers!r}
+                with patch("tracemotive.local_client.webbrowser.open", return_value=True) as browser:
+                    url = open_comparison(
+                        identifiers["older"],
+                        identifiers["newer"],
+                        endpoint={endpoint!r},
+                    )
+                expected = {f"{endpoint}/#/compare/{older}/{newer}"!r}
+                assert url == expected
+                browser.assert_called_once_with(url, new=0, autoraise=False)
+                print(json.dumps({{"url": url}}))
+                """
+            )
+            self.assertEqual(open_boundary.returncode, 0, open_boundary.stderr)
+            self.assertEqual(
+                json.loads(open_boundary.stdout.strip().splitlines()[-1])["url"],
+                f"{endpoint}/#/compare/{older}/{newer}",
+            )
+        finally:
+            if server.poll() is None:
+                server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
+            if server.stdout is not None:
+                server.stdout.close()
+            if server.stderr is not None:
+                server.stderr.close()
+        self.assertIsNotNone(server.returncode)
 
     def test_installed_server_extra_runs_documented_uvicorn_factory(self) -> None:
         factory_target = "tracemotive.collector:create_app"

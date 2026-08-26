@@ -16,13 +16,12 @@ authentication, remote collectors, or broad framework support.
 
 ![TraceMotive demo](docs/assets/tracemotive-demo.gif)
 
-## Try it locally in about three minutes
+## Compare your own two runs
 
-This is the normal installed-user path. It uses a deterministic local pair, so
-it needs no model provider, API key, Node.js, npm, cloud service, or external
-network request.
+The normal installed-user path is local and does not need Node.js, npm, a cloud
+service, an external network request, or an AI-provider API key.
 
-In the first terminal, install the server extra and start the loopback server:
+1. Install the server extra and start the loopback server:
 
 ```text
 python -m pip install "tracemotive[server]"
@@ -32,13 +31,74 @@ tracemotive serve
 `tracemotive serve` binds to `127.0.0.1:8765` and serves the packaged UI and
 APIs. Keep this terminal running.
 
+2. Run your agent twice with the same exact trace name. The generic Python SDK
+boundary is:
+
+```python
+import tracemotive
+
+tracemotive.configure(
+    enabled=True,
+    endpoint="http://127.0.0.1:8765",
+    capture_content=False,
+)
+
+with tracemotive.trace("my-agent-run"):
+    with tracemotive.span("process request"):
+        ...
+
+tracemotive.flush()
+```
+
+Use the same value passed to `tracemotive.trace` for both runs, then call
+`tracemotive.flush()` after each run. Content capture remains independently
+opt-in; leaving it off preserves structure/status evidence but can leave
+content-level differences unknown.
+
+3. Compare the latest observed pair:
+
+```text
+tracemotive last "my-agent-run"
+```
+
+The terminal shows the selected runs, `Look here`, `What changed`, evidence
+limitations or unknowns, the local comparison URL, and the non-causality
+boundary. Open that URL for the full packaged UI comparison.
+
+### CLI contract
+
+```text
+tracemotive compare LEFT_TRACE_ID RIGHT_TRACE_ID [--endpoint URL] [--json] [--open]
+tracemotive last TRACE_NAME [--endpoint URL] [--json] [--open]
+```
+
+- `last` matches only the exact trace name, uses the two newest matches in one
+  query sequence at invocation time, sets the older run to left and newer run
+  to right, and does not provide an atomic latest guarantee.
+- If those two matches have the same `started_at`, `last` does not infer their
+  order from `trace_id`; it fails and asks for explicit `tracemotive compare`.
+- `--endpoint` accepts only an existing HTTP loopback TraceMotive server.
+- `--json` writes the existing `/api/v3` response to stdout without adding a
+  new schema; diagnostics go to stderr.
+- `--open` opens the validated local UI URL through Python's browser boundary.
+- Exit codes are `0` success, `1` unexpected internal failure, `2` usage,
+  `3` invalid endpoint, `4` transport/network failure, `5` API/protocol
+  failure, and `6` browser-open failure after a successful comparison.
+
+## Quick deterministic demo
+
+This path uses a deterministic local pair, so it needs no model provider, API
+key, Node.js, npm, cloud service, or external network request.
+
+With the server from the previous section still running:
+
 In a second terminal, seed the stable identified example:
 
 ```text
 tracemotive demo
 ```
 
-Open the printed comparison URL. In the comparison, use the compact workflow:
+Open the printed comparison URL. In the UI comparison, use the compact workflow:
 
 - **Look here** — the first evidence-supported investigation starting point;
 - **What changed** — the best supported behavioral description;
@@ -47,8 +107,7 @@ Open the printed comparison URL. In the comparison, use the compact workflow:
 - **What TraceMotive does not know** — the boundary between observation and
   explanation.
 
-To see the uncertainty barrier for repeated members, run this in the second
-terminal instead:
+To see the uncertainty barrier for repeated members, run this instead:
 
 ```text
 tracemotive demo --scenario uncertain
@@ -160,7 +219,7 @@ source-checkout documentation only.
 
 ## Install a released package
 
-The current package version is `0.5.1`. For a normal installation:
+The current package version is `0.6.0`. For a normal installation:
 
 ```text
 python -m pip install tracemotive
@@ -295,7 +354,7 @@ The repository intentionally keeps these layers separate:
 |---|---|
 | `spec/v0.1-frozen-spec.md` | Historical Frozen compatibility contract for Canonical schema, ingest, privacy, transport, and v1 behavior. It remains authoritative and unchanged. |
 | `spec/v0.2-proposed-spec.md` and `spec/v0.3-proposed-spec.md` | Historical proposed design documents; they are not permission to rewrite the v0.1 contract. |
-| Package metadata | `0.5.1` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
+| Package metadata | `0.6.0` distribution version; not a Canonical schema, ingest protocol, or automatic API version trigger. |
 | Canonical and ingest | Canonical schema `0.1`; ingest protocol `1`. |
 | Query APIs | TraceMotive currently exposes `/api/v1`, `/api/v2`, `/api/v3`, and `/api/v4`. `/api/v3` provides the investigation comparison surface, and `/api/v4/compare/{left}/{right}` provides the structured-diff projection. |
 | `docs/v0.4/` | Frozen-for-implementation v0.4 design and release requirements; it is not itself a package-version or release declaration. |

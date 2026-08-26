@@ -10,6 +10,18 @@ from typing import Any
 
 from tracemotive.collector import DEFAULT_BIND_HOST, create_app
 from tracemotive.demo import DEFAULT_DEMO_ENDPOINT, DemoError, format_demo_result, seed_demo
+from tracemotive.local_client import (
+    ApiContractError,
+    ApiResponseStatusError,
+    BrowserOpenError,
+    InvalidEndpointError,
+    LocalClientFailures,
+    TransportFailureError,
+    compare_traces as compare_traces_http,
+    format_comparison_result,
+    last_comparison,
+    open_comparison,
+)
 from tracemotive.storage import (
     DatabasePathError,
     MigrationError,
@@ -65,6 +77,35 @@ def _parser() -> argparse.ArgumentParser:
         help=f"existing loopback TraceMotive server (default: {DEFAULT_DEMO_ENDPOINT})",
     )
     demo.set_defaults(handler=_run_demo)
+    compare = commands.add_parser(
+        "compare",
+        help="compare two traces with the local v3 investigation API",
+    )
+    compare.add_argument("left", metavar="LEFT_TRACE_ID")
+    compare.add_argument("right", metavar="RIGHT_TRACE_ID")
+    compare.add_argument(
+        "--endpoint",
+        default=DEFAULT_DEMO_ENDPOINT,
+        metavar="URL",
+        help=f"existing loopback TraceMotive server (default: {DEFAULT_DEMO_ENDPOINT})",
+    )
+    compare.add_argument("--json", action="store_true", help="write the v3 JSON response to stdout")
+    compare.add_argument("--open", action="store_true", help="open the local comparison URL")
+    compare.set_defaults(handler=_run_compare)
+    last = commands.add_parser(
+        "last",
+        help="compare the two newest exact-name trace summaries",
+    )
+    last.add_argument("trace_name", metavar="TRACE_NAME")
+    last.add_argument(
+        "--endpoint",
+        default=DEFAULT_DEMO_ENDPOINT,
+        metavar="URL",
+        help=f"existing loopback TraceMotive server (default: {DEFAULT_DEMO_ENDPOINT})",
+    )
+    last.add_argument("--json", action="store_true", help="write the v3 JSON response to stdout")
+    last.add_argument("--open", action="store_true", help="open the selected comparison URL")
+    last.set_defaults(handler=_run_last)
     return parser
 
 
@@ -144,6 +185,85 @@ def _run_demo(arguments: argparse.Namespace) -> int:
         return 1
     print(format_demo_result(result))
     return 0
+
+
+def _local_client_exit_code(exc: BaseException) -> int:
+    if isinstance(exc, InvalidEndpointError):
+        return 3
+    if isinstance(exc, TransportFailureError):
+        return 4
+    if isinstance(exc, (ApiContractError, ApiResponseStatusError)):
+        return 5
+    return 1
+
+
+def _write_local_json(raw: bytes) -> None:
+    sys.stdout.buffer.write(raw)
+    sys.stdout.buffer.write(b"\n")
+    sys.stdout.buffer.flush()
+
+
+def _open_if_requested(
+    arguments: argparse.Namespace,
+    command: str,
+    left: str,
+    right: str,
+) -> int:
+    if not arguments.open:
+        return 0
+    try:
+        open_comparison(left, right, endpoint=arguments.endpoint)
+    except BrowserOpenError as exc:
+        print(f"tracemotive {command}: {exc}", file=sys.stderr)
+        return 6
+    return 0
+
+
+def _run_compare(arguments: argparse.Namespace) -> int:
+    try:
+        comparison = compare_traces_http(
+            arguments.left,
+            arguments.right,
+            endpoint=arguments.endpoint,
+        )
+    except LocalClientFailures as exc:
+        print(f"tracemotive compare: {exc}", file=sys.stderr)
+        return _local_client_exit_code(exc)
+    except Exception:
+        print("tracemotive compare: unexpected internal failure", file=sys.stderr)
+        return 1
+
+    if arguments.json:
+        _write_local_json(comparison.raw)
+    else:
+        print(format_comparison_result(comparison, endpoint=arguments.endpoint))
+    return _open_if_requested(arguments, "compare", arguments.left, arguments.right)
+
+
+def _run_last(arguments: argparse.Namespace) -> int:
+    try:
+        selection, comparison = last_comparison(
+            arguments.trace_name,
+            endpoint=arguments.endpoint,
+        )
+    except LocalClientFailures as exc:
+        print(f"tracemotive last: {exc}", file=sys.stderr)
+        return _local_client_exit_code(exc)
+    except Exception:
+        print("tracemotive last: unexpected internal failure", file=sys.stderr)
+        return 1
+
+    if arguments.json:
+        _write_local_json(comparison.raw)
+    else:
+        print(
+            format_comparison_result(
+                comparison,
+                endpoint=arguments.endpoint,
+                selection=selection,
+            )
+        )
+    return _open_if_requested(arguments, "last", selection.left.trace_id, selection.right.trace_id)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

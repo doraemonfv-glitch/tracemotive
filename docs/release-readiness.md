@@ -1,16 +1,61 @@
-# TraceMotive v0.5.0 release readiness
+# TraceMotive v0.6.0 release readiness
 
 This checklist is local-only. These commands build and inspect artifacts; they
 do not upload, publish, create a release, push a tag, or create a GitHub
 Release.
 
 The Python distribution and import package are both `tracemotive`, with
-package version `0.5.0`. The Canonical schema remains `0.1`, the ingest
-protocol remains `1`, `/api/v1`, `/api/v2`, and `/api/v3` are preserved, and
-the additive structured-diff comparison contract is `/api/v4`. LangGraph
-is not currently supported and is not part of the v0.5.0 support claim.
+package version `0.6.0`. The Canonical schema remains `0.1`, the ingest
+protocol remains `1`, `/api/v1`, `/api/v2`, `/api/v3`, and `/api/v4` are
+preserved. LangGraph is not currently supported and is not part of the
+v0.6.0 support claim.
 
-## v0.5.0 release notes
+## v0.6.0 release notes
+
+v0.6.0 connects the existing comparison engine to an everyday local CLI
+workflow without changing Canonical data, ingest, storage, or API contracts.
+
+### Added / Improved
+
+- Added `tracemotive compare LEFT RIGHT` for two explicit trace IDs through
+  the existing production `/api/v3` implementation.
+- Added `tracemotive last TRACE_NAME` for exact-name selection of the latest
+  observed pair: older run left, newer run right.
+- Added a loopback-only local HTTP client, human output, raw `/api/v3`
+  `--json` passthrough, and a Python browser boundary behind `--open`.
+- Documented deterministic installed-user onboarding from two real SDK runs to
+  the first evidence-supported investigation point.
+
+### Important limitations
+
+- `last` has no atomic latest guarantee and never infers identity from
+  substrings, case, arguments, timestamps, or framework IDs.
+- When the two selected exact-name matches have identical `started_at`, `last`
+  does not use `trace_id` as a time-order claim and fails closed.
+- `--json` is not a new envelope or schema.
+- An observed starting point remains evidence for investigation, not causal
+  proof.
+- Existing issue candidate: on local Windows, `test_demo` can fail during
+  `TemporaryDirectory` SQLite cleanup with `WinError 32`. The same shape was
+  reproduced from the v0.5.1 committed tree; this is not a v0.6 CLI change.
+
+### Phase 2 local validation evidence
+
+| Check | Result |
+|---|---|
+| Built wheel/sdist metadata and contents | PASS |
+| Installed-wheel isolated import and packaged UI | PASS |
+| Real SDK ingest through installed server | PASS |
+| Installed `last --json` / `compare --json` | PASS |
+| Capture-off supported observation and human output | PASS |
+| Browser URL boundary without launching a browser | PASS |
+| Frontend tests / production build | PASS (local Windows sandbox required an unrestricted rerun) |
+| Full Python discovery | 438 tests; 3 release-only skips; 2 pre-existing Windows demo-cleanup errors |
+
+The two remaining Windows cleanup errors do not convert this local evidence
+into a complete green release gate.
+
+## Historical v0.5.0 release notes
 
 v0.5.0 is an adoptability release. It does not add a new API namespace, change
 Canonical schema, or change ingest protocol.
@@ -138,7 +183,8 @@ python -m build --sdist --wheel --no-isolation
 
 Inspect both artifacts in `dist/`. The wheel must contain the package-owned
 `tracemotive/ui/index.html` and current JavaScript/CSS assets, the CLI, Query
-API, comparison, storage, and UI resource modules. It must not require
+API, local CLI client (`tracemotive/local_client.py`), comparison, storage,
+and UI resource modules. It must not require
 `frontend/`, `frontend/dist/`, `node_modules/`, or repository paths at runtime.
 
 ## Fresh installed-user smoke
@@ -170,6 +216,11 @@ Create the traces through public SDK paths and confirm that committed traces
 remain available after restart. The comparison smoke must preserve localized
 `exact_match`, `left_only`, `right_only`, `ambiguous_group`, and `unavailable`
 semantics and must not report repeated same-signature ordinal pairs as exact.
+For v0.6, create two exact-name SDK runs with capture disabled, then run the
+installed console entry point's `last TRACE_NAME --json` and
+`compare LEFT RIGHT --json`; confirm older/left, newer/right, identical
+production `/api/v3` results, a supported investigation point, and the local
+UI URL boundary.
 
 The release-only full-stack test is available with:
 

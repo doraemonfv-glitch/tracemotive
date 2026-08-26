@@ -27,6 +27,10 @@ comparison.
 span differences plus span uncertainties. `/api/v3` also applies the same
 record ceiling to composed finding and uncertainty items.
 
+The local CLI reuses these production comparison bounds through `/api/v3`.
+Its local HTTP client rejects responses larger than the existing 4 MiB bound
+before JSON parsing; it does not create separate CLI comparison limits.
+
 ## Structured-diff bounds
 
 Source: `tracemotive/structured_diff.py`. These bounds produce a bounded
