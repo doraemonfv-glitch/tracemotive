@@ -193,6 +193,12 @@ class ReleaseConsistencyTests(unittest.TestCase):
     def test_readme_installed_user_path_uses_packaged_commands(self) -> None:
         self.assertIn('python -m pip install "tracemotive[server]"', self.installed)
         self.assertIn('python -m pip install "tracemotive[openai-agents]"', self.installed)
+        self.assertIn('tracemotive last "my-agent-run"', self.installed)
+        self.assertIn("tracemotive compare LEFT_TRACE_ID RIGHT_TRACE_ID", self.installed)
+        self.assertIn("Exit codes are `0` success", self.installed)
+        self.assertIn("`/api/v3` response", self.installed)
+        self.assertIn("atomic latest guarantee", self.installed)
+        self.assertNotIn("tracemotive flush ", self.installed)
         self.assertIn("from tracemotive.integrations.openai_agents import install", self.installed)
         checkout = find_checkout_commands(self.installed)
         self.assertEqual(
@@ -280,6 +286,18 @@ class CompatibilityLimitsStorageTests(unittest.TestCase):
         self.assertIn("Normal installed users do not install Node.js", self.readme)
         self.assertIn("accepted by metadata", self.compatibility)
         self.assertIn("not a current CI matrix version", self.compatibility)
+
+    def test_local_cli_contract_is_documented_with_production_bounds(self) -> None:
+        compatibility = (ROOT / "docs" / "compatibility.md").read_text(encoding="utf-8")
+        limits = (ROOT / "docs" / "limits.md").read_text(encoding="utf-8")
+        readiness = (ROOT / "docs" / "release-readiness.md").read_text(encoding="utf-8")
+        self.assertIn("tracemotive compare LEFT_TRACE_ID RIGHT_TRACE_ID", compatibility)
+        self.assertIn("tracemotive last TRACE_NAME", compatibility)
+        self.assertIn("exact trace-name match", compatibility)
+        self.assertIn("passes through the existing\n`/api/v3` response", compatibility)
+        self.assertIn("The local CLI reuses these production comparison bounds", limits)
+        self.assertIn("`last TRACE_NAME --json`", readiness)
+        self.assertIn("`compare LEFT RIGHT --json`", readiness)
 
     def test_documented_hard_limits_match_source_constants(self) -> None:
         from tracemotive.comparison import (
