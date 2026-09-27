@@ -116,10 +116,12 @@ security audit. CodeQL, dependency-review, and SBOM generation remain deferred.
 ## Continuous integration
 
 GitHub Actions runs on pushes to `main` and pull requests targeting `main`.
-The product CI workflow has three jobs:
+The product CI workflow has four jobs:
 
 - Python tests on Python 3.10 and 3.12, including the repository dependencies and
   packaging tools.
+- The same Python tests on Python 3.12 on Windows and macOS. This job is
+  non-blocking evidence gathering; it is not a platform support claim.
 - Frontend tests and a production build on Node.js 22.12.0.
 - Ruff plus the V05-03 release-consistency checks.
 

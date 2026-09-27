@@ -253,9 +253,6 @@ class ReleaseConsistencyTests(unittest.TestCase):
         self.assertIn("LangGraph", historical)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 class CompatibilityLimitsStorageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -358,3 +355,7 @@ class CompatibilityLimitsStorageTests(unittest.TestCase):
         self.assertIn("investigation comparison surface", self.compatibility)
         self.assertIn("structured-diff projection", self.compatibility)
         self.assertNotIn("remain compatibility surfaces", self.compatibility)
+
+
+if __name__ == "__main__":
+    unittest.main()

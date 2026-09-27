@@ -46,11 +46,14 @@ Node.js is a contributor and frontend-build concern. CI uses Node.js
 
 ## Operating systems
 
-GitHub Actions validation runs on `ubuntu-latest`.
+Blocking GitHub Actions validation runs on `ubuntu-latest`.
 
-That is the current CI environment. It is not a full cross-platform
-validation matrix. Local Windows development has occurred in this checkout,
-but Windows and macOS are not separately claimed as CI-validated platforms.
+CI also runs the Python test suite with Python `3.12` on `windows-latest` and
+`macos-latest` as a non-blocking evidence job. A failure there does not fail
+CI, and a passing run is not a support claim. Local Windows development has
+occurred in this checkout, but Windows and macOS are not claimed as
+CI-validated platforms until that job has a recorded green history on `main`
+and is made blocking in the same change that updates this page.
 
 ## Current protocol and APIs
 

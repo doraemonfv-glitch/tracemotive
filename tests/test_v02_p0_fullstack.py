@@ -15,13 +15,14 @@ import re
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, ProxyHandler, build_opener
 from urllib.parse import quote
 import zipfile
+
+from tests.process_support import RetryingTemporaryDirectory
 
 
 _RUN_RELEASE_VALIDATION = os.environ.get("TRACEMOTIVE_RUN_V02_22") == "1"
@@ -191,7 +192,7 @@ class V02P0FullStackTests(unittest.TestCase):
         if not cls.wheel_path.is_file():
             raise AssertionError(f"wheel does not exist: {cls.wheel_path}")
 
-        cls.temp_dir = tempfile.TemporaryDirectory(prefix="tracemotive-v02-22-")
+        cls.temp_dir = RetryingTemporaryDirectory(prefix="tracemotive-v02-22-")
         cls.external_root = Path(cls.temp_dir.name)
         cls.venv_path = cls.external_root / "isolated-venv"
         cls.install_env = os.environ.copy()
