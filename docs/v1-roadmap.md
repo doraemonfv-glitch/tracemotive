@@ -60,7 +60,8 @@ contributor setup (see R2).
 
 ### 2.3 Release blockers and known failures
 
-**R1 — Windows `WinError 32` during demo test cleanup (known, open).**
+**R1 — Windows `WinError 32` during demo test cleanup (open at audit time;
+fixed by M1, see status below).**
 `docs/release-readiness.md` records two `test_demo` errors on local Windows:
 `TemporaryDirectory` cleanup fails because the SQLite file is still open. Both
 failing sites (`tests/test_demo.py` class teardown and the fresh-process loop)
@@ -191,11 +192,16 @@ test passes with `TRACEMOTIVE_RUN_V02_22=1` (3/3); running
 Local verification on Windows 11 (CPython 3.14.6, fresh contributor venv,
 Node.js 24): before M1.8/M1.9, full discovery was 452 run, 3 release-only
 skips, 0 failures/errors, including the installed-wheel packaging gate. With
-M1.8/M1.9, full discovery is 463 run, 3 release-only skips, 0 failures/errors,
+M1.8/M1.9, full discovery is 464 run, 3 release-only skips, 0 failures/errors,
 with no new entries left in `%TEMP%`. The release-only full-stack test
 passes against a locally built `0.6.0` wheel (3/3). The M1.9 step script,
-run locally under Windows PowerShell 5.1, passes (463 run). The new M1.8
-tests failed before the fix (3 leaked directories, `WinError 5` on read-only
+run locally under Windows PowerShell 5.1, passes. Under PowerShell 7.6.6, the
+runner image's version, wrapped the way GitHub Actions runs a `pwsh` step, the
+unmodified step fails at the first failing native command (an injected `pip`
+failure) and never reaches the test run; without its
+`$PSNativeCommandUseErrorActionPreference` line the same failure is ignored.
+`tests/test_ci_workflow.py` repeats that check wherever `pwsh` is installed.
+The new M1.8 tests failed before the fix (3 leaked directories, `WinError 5` on read-only
 entries, no implicit cleanup) and pass after it. Not verified locally:
 Python 3.10–3.13 on Windows, and the symlink case of the read-only test
 (symlink creation needs privilege on this machine; Linux and macOS CI run it).

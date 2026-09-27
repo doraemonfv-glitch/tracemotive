@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -42,14 +46,17 @@ class CIWorkflowTests(unittest.TestCase):
         self.assertIn("python -m pip install -r requirements.txt", job)
         self.assertIn("python -m unittest discover -s tests -v", job)
 
-    def test_windows_also_runs_the_suite_from_a_contributor_venv(self) -> None:
+    def _windows_venv_step(self) -> str:
         job = self._job("cross-platform-python-tests")
         match = re.search(
             r"(?ms)^      - name: Run Python tests from a Windows contributor venv\n(.*?)(?=^      - |\Z)",
             job,
         )
         self.assertIsNotNone(match)
-        step = match.group(0)
+        return match.group(0)
+
+    def test_windows_also_runs_the_suite_from_a_contributor_venv(self) -> None:
+        step = self._windows_venv_step()
         self.assertIn("if: runner.os == 'Windows' && !cancelled()", step)
         self.assertIn("$PSNativeCommandUseErrorActionPreference = $true", step)
         commands = [
@@ -62,6 +69,36 @@ class CIWorkflowTests(unittest.TestCase):
         positions = [step.find(command) for command in commands]
         self.assertNotIn(-1, positions, dict(zip(commands, positions)))
         self.assertEqual(positions, sorted(positions))
+
+    @unittest.skipIf(shutil.which("pwsh") is None, "PowerShell 7 (pwsh) is not installed")
+    def test_windows_venv_step_stops_at_a_failing_native_command(self) -> None:
+        run = self._windows_venv_step().split("run: |\n", 1)[1]
+        prelude = [line.strip() for line in run.splitlines() if line.strip().startswith("$")]
+        self.assertTrue(prelude)
+        python = sys.executable.replace("'", "''")
+        # Wrapped the way GitHub Actions runs a `shell: pwsh` step.
+        script = "\n".join(
+            [
+                "$ErrorActionPreference = 'stop'",
+                *prelude,
+                f"& '{python}' -c 'raise SystemExit(3)'",
+                "Write-Output 'continued after failure'",
+                f"& '{python}' -c 'pass'",
+                "if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "step.ps1"
+            path.write_text(script + "\n", encoding="utf-8")
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", f". '{path}'"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        self.assertNotEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertNotIn("continued after failure", completed.stdout)
 
     def test_non_blocking_platform_evidence_is_not_a_support_claim(self) -> None:
         job = self._job("cross-platform-python-tests")
