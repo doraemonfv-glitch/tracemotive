@@ -76,6 +76,24 @@ directory delete can hit a sharing violation. The same stop-then-delete
 pattern exists in `tests/test_packaging.py` and
 `tests/test_v02_p0_fullstack.py`.
 
+Status after M1 (verified on Windows 11, CPython 3.14.6, fresh
+contributor venv created with `python -m venv`):
+
+- The launcher condition is real: in that venv, `Popen.pid` of
+  `sys.executable` differs from the PID the interpreter reports for itself.
+- **Reproduced before the fix.** `tests/test_demo.py` from `main` failed in 7
+  of 10 consecutive runs with `PermissionError: [WinError 32]` on
+  `demo.sqlite3`, at both sites: `DemoTests.tearDownClass` and
+  `test_uncertain_scenario_is_repeatable_across_fresh_processes`.
+- **Fixed with the M1 helpers.** The same 10-run loop with this branch passed
+  10/10, with `ResourceWarning` promoted to an error and no leaked temporary
+  directories. An instrumented rerun (8 runs, 24 removals) saw zero
+  `PermissionError` retries. The bounded stop plus the port-release wait is
+  what removes the race; the retry loop is a safety net that did not fire.
+- The earlier Windows CI evidence job ran the suite with the setup-python
+  interpreter, which is not a venv launcher. It passed, but it never exercised
+  this condition; M1.9 adds a venv step for that.
+
 **R2 — Installed-wheel gate cannot run from the documented contributor
 setup.** `tests/test_packaging.py` creates its validation venv with
 `--system-site-packages` and installs the wheel with `--no-deps`. That reuses
@@ -146,6 +164,8 @@ schema, ingest, or storage change.
 | M1.5 Add a non-blocking Windows/macOS Python test job to CI (R3). | P1 |
 | M1.6 Fix the misplaced `__main__` block (R5). | P2 |
 | M1.7 Consistency test: while the cross-platform job is non-blocking, live docs must not claim Windows/macOS validation. | P1 |
+| M1.8 A failed `setUpClass` must not leak its temporary directory: callers register cleanup with `addClassCleanup` as soon as the directory exists (the demo server stop is registered after it, so it runs first), and `RetryingTemporaryDirectory` keeps the stdlib safety net of implicit cleanup with a `ResourceWarning`. Removal clears the read-only attribute (`WinError 5`) only on entries inside the tree, never through links. | P0 |
+| M1.9 Windows step in the non-blocking cross-platform job that repeats the suite from a documented contributor venv (`python -m venv`, `Activate.ps1`, `pip install -e ".[server]"`). | P1 |
 
 Acceptance criteria:
 
@@ -153,6 +173,10 @@ Acceptance criteria:
   (no packaging `setUpClass` error).
 - Helper unit tests prove retry-then-success, bounded failure, and immediate
   propagation of non-sharing errors.
+- Regression tests prove that a failing `setUpClass` in `test_demo`,
+  `test_packaging` and `test_v02_p0_fullstack` removes its directory, that
+  read-only entries are removed on the first attempt, and that a sharing
+  violation on a writable entry is not masked.
 - No production module under `tracemotive/` changes.
 - The cross-platform job is `continue-on-error: true`, and
   `docs/compatibility.md` still says Windows and macOS are not formally
@@ -163,8 +187,18 @@ full discovery 452 run, 3 release-only skips, 0 failures/errors; the
 installed-wheel packaging gate passes (18/18); the release-only full-stack
 test passes with `TRACEMOTIVE_RUN_V02_22=1` (3/3); running
 `tests/test_documentation.py` directly now executes 18 tests instead of 14.
-The Windows fix has not been executed on Windows yet. The M1.5 job is the
-first place it will be.
+
+Local verification on Windows 11 (CPython 3.14.6, fresh contributor venv,
+Node.js 24): before M1.8/M1.9, full discovery was 452 run, 3 release-only
+skips, 0 failures/errors, including the installed-wheel packaging gate. With
+M1.8/M1.9, full discovery is 463 run, 3 release-only skips, 0 failures/errors,
+with no new entries left in `%TEMP%`. The release-only full-stack test
+passes against a locally built `0.6.0` wheel (3/3). The M1.9 step script,
+run locally under Windows PowerShell 5.1, passes (463 run). The new M1.8
+tests failed before the fix (3 leaked directories, `WinError 5` on read-only
+entries, no implicit cleanup) and pass after it. Not verified locally:
+Python 3.10–3.13 on Windows, and the symlink case of the read-only test
+(symlink creation needs privilege on this machine; Linux and macOS CI run it).
 
 Exit to "platform validated" (separate, later decision): the cross-platform
 job is green on `main` for 10 consecutive runs. Then make it blocking and
@@ -259,7 +293,7 @@ GO or explicitly recorded as not supported, and the gate below passes.
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Windows fix addresses the wrong root cause | Medium | M1 adds both a port-release wait and bounded retry; the Windows CI job turns the hypothesis into evidence. |
+| Windows fix addresses the wrong root cause | Low | Reproduced locally in a Windows venv (7/10 failures before, 10/10 passes after); the M1.9 CI step repeats it on the runner. Remaining: no recorded green history on `main` yet. |
 | New CLI surface becomes an unplanned public contract | Medium | Every new subcommand is listed for approval; `--json` output reuses existing API responses instead of new schemas. |
 | LangGraph API churn breaks the adapter | High | Narrow version range, real-framework CI per named version, fail-closed handler, no support claim before GO. |
 | Bulk deletion races with delayed ingest | Certain (by spec §50.1) | Document that traces may reappear; no tombstones without approval. |

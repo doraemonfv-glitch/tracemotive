@@ -55,6 +55,7 @@ class DemoTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.directory = RetryingTemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
         cls.port = _free_port()
         cls.endpoint = f"http://127.0.0.1:{cls.port}"
         database = Path(cls.directory.name) / "demo.sqlite3"
@@ -73,29 +74,21 @@ class DemoTests(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        try:
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline and not _health(cls.endpoint):
-                if cls.server.poll() is not None:
-                    raise AssertionError("demo test server exited before becoming ready")
-                time.sleep(0.05)
-            if not _health(cls.endpoint):
-                raise AssertionError("demo test server did not become ready")
-        except BaseException:
-            cls._stop_server_and_remove_database()
-            raise
+        # Class cleanups run last-in first-out, also when setUpClass fails,
+        # so the server stops before its database directory is removed.
+        cls.addClassCleanup(cls._stop_server)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and not _health(cls.endpoint):
+            if cls.server.poll() is not None:
+                raise AssertionError("demo test server exited before becoming ready")
+            time.sleep(0.05)
+        if not _health(cls.endpoint):
+            raise AssertionError("demo test server did not become ready")
 
     @classmethod
-    def tearDownClass(cls) -> None:
-        cls._stop_server_and_remove_database()
-
-    @classmethod
-    def _stop_server_and_remove_database(cls) -> None:
-        try:
-            stop_process(cls.server)
-            wait_for_port_release(cls.port)
-        finally:
-            cls.directory.cleanup()
+    def _stop_server(cls) -> None:
+        stop_process(cls.server)
+        wait_for_port_release(cls.port)
 
     def test_server_unavailable_and_remote_endpoint_fail_actionably(self) -> None:
         with self.assertRaisesRegex(DemoError, "not running on http://127.0.0.1:1"):

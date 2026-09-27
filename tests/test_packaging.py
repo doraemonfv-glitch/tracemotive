@@ -409,6 +409,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls._temporary = RetryingTemporaryDirectory(prefix="tracemotive v04-02 packaging ")
+        cls.addClassCleanup(cls._temporary.cleanup)
         temporary_root = Path(cls._temporary.name)
         cls._source_copy = temporary_root / "source"
         _extract_tracked_checkout(cls._source_copy)
@@ -528,10 +529,6 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             )
         shutil.rmtree(cls._source_copy)
         cls._source_checkout_removed = not cls._source_copy.exists()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._temporary.cleanup()
 
     def _installed_environment(self) -> dict[str, str]:
         environment = _clean_subprocess_environment()

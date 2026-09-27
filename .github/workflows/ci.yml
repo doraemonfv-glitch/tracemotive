@@ -104,6 +104,25 @@ jobs:
       - name: Run Python tests
         run: python -m unittest discover -s tests -v
 
+      # A venv's python.exe on Windows is a launcher that runs the base
+      # interpreter as a child process, the condition behind the WinError 32
+      # test cleanup failure. The step above uses the setup-python interpreter
+      # directly, so this repeats the suite from the documented contributor
+      # venv. It runs even if the step above failed, to keep both results.
+      - name: Run Python tests from a Windows contributor venv
+        if: runner.os == 'Windows' && !cancelled()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m venv "$env:RUNNER_TEMP\contributor-venv"
+          & "$env:RUNNER_TEMP\contributor-venv\Scripts\Activate.ps1"
+          python -c "import sys; assert sys.prefix != sys.base_prefix, 'not running in a venv'"
+          python -m pip install --upgrade pip
+          python -m pip install "setuptools>=77,<84" wheel build
+          python -m pip install -e ".[server]"
+          python -m unittest discover -s tests -v
+
   frontend:
     name: Frontend tests and production build
     runs-on: ubuntu-latest

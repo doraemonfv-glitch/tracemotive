@@ -42,6 +42,27 @@ class CIWorkflowTests(unittest.TestCase):
         self.assertIn("python -m pip install -r requirements.txt", job)
         self.assertIn("python -m unittest discover -s tests -v", job)
 
+    def test_windows_also_runs_the_suite_from_a_contributor_venv(self) -> None:
+        job = self._job("cross-platform-python-tests")
+        match = re.search(
+            r"(?ms)^      - name: Run Python tests from a Windows contributor venv\n(.*?)(?=^      - |\Z)",
+            job,
+        )
+        self.assertIsNotNone(match)
+        step = match.group(0)
+        self.assertIn("if: runner.os == 'Windows' && !cancelled()", step)
+        self.assertIn("$PSNativeCommandUseErrorActionPreference = $true", step)
+        commands = [
+            "python -m venv",
+            "Scripts\\Activate.ps1",
+            "assert sys.prefix != sys.base_prefix",
+            'python -m pip install -e ".[server]"',
+            "python -m unittest discover -s tests -v",
+        ]
+        positions = [step.find(command) for command in commands]
+        self.assertNotIn(-1, positions, dict(zip(commands, positions)))
+        self.assertEqual(positions, sorted(positions))
+
     def test_non_blocking_platform_evidence_is_not_a_support_claim(self) -> None:
         job = self._job("cross-platform-python-tests")
         if "continue-on-error: true" not in job:

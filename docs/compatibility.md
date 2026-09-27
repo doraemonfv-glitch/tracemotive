@@ -49,8 +49,10 @@ Node.js is a contributor and frontend-build concern. CI uses Node.js
 Blocking GitHub Actions validation runs on `ubuntu-latest`.
 
 CI also runs the Python test suite with Python `3.12` on `windows-latest` and
-`macos-latest` as a non-blocking evidence job. A failure there does not fail
-CI, and a passing run is not a support claim. Local Windows development has
+`macos-latest` as a non-blocking evidence job. On Windows, that job runs the
+suite a second time from a contributor virtual environment created with
+`python -m venv`. A failure there does not fail CI, and a passing run is not a
+support claim. Local Windows development has
 occurred in this checkout, but Windows and macOS are not claimed as
 CI-validated platforms until that job has a recorded green history on `main`
 and is made blocking in the same change that updates this page.
