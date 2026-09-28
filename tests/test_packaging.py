@@ -7,8 +7,8 @@ import shutil
 import socket
 import subprocess
 import sys
+import sysconfig
 import tarfile
-import tempfile
 import textwrap
 import time
 import urllib.error
@@ -17,6 +17,7 @@ import unittest
 import zipfile
 from email.parser import Parser
 
+from tests.process_support import RetryingTemporaryDirectory
 from tests.release_consistency import package_version
 
 
@@ -361,12 +362,54 @@ def _clean_subprocess_environment() -> dict[str, str]:
     return environment
 
 
+def _expose_running_environment_dependencies(installed_python: Path) -> None:
+    """Let the validation venv import dependencies from a contributor venv.
+
+    ``--system-site-packages`` exposes only the base interpreter.  When this
+    suite itself runs inside a virtual environment, as the contributor setup
+    documents, append that environment's library directories after the
+    validation venv's own site-packages.  The wheel is installed first with
+    ``--no-deps`` into the validation venv, so its copy is imported first;
+    ``.pth`` files inside the appended directories, including an editable
+    checkout install, are not processed.
+    """
+
+    if sys.prefix == sys.base_prefix:
+        return
+    running_paths = list(
+        dict.fromkeys(sysconfig.get_paths()[key] for key in ("purelib", "platlib"))
+    )
+    located = subprocess.run(
+        [
+            str(installed_python),
+            "-c",
+            "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+        ],
+        env=_clean_subprocess_environment(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if located.returncode != 0:
+        raise RuntimeError(
+            f"validation venv site-packages lookup failed:\n{located.stdout}\n{located.stderr}"
+        )
+    site_packages = Path(located.stdout.strip())
+    site_packages.joinpath("tracemotive-test-running-environment.pth").write_text(
+        "".join(f"{path}\n" for path in running_paths),
+        encoding="utf-8",
+    )
+
+
 class BuiltArtifactPackagingTests(unittest.TestCase):
     """Build and exercise artifacts from a tracked-only checkout."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._temporary = tempfile.TemporaryDirectory(prefix="tracemotive v04-02 packaging ")
+        cls._temporary = RetryingTemporaryDirectory(prefix="tracemotive v04-02 packaging ")
+        cls.addClassCleanup(cls._temporary.cleanup)
         temporary_root = Path(cls._temporary.name)
         cls._source_copy = temporary_root / "source"
         _extract_tracked_checkout(cls._source_copy)
@@ -468,6 +511,7 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
         )
         if install.returncode != 0:
             raise RuntimeError(f"wheel installation failed:\n{install.stdout}\n{install.stderr}")
+        _expose_running_environment_dependencies(cls._installed_python)
         dependencies = subprocess.run(
             [str(cls._installed_python), "-c", "import fastapi, uvicorn"],
             cwd=cls._run_root,
@@ -485,10 +529,6 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
             )
         shutil.rmtree(cls._source_copy)
         cls._source_checkout_removed = not cls._source_copy.exists()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._temporary.cleanup()
 
     def _installed_environment(self) -> dict[str, str]:
         environment = _clean_subprocess_environment()

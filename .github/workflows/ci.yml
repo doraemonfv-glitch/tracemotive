@@ -56,6 +56,73 @@ jobs:
       - name: Run Python tests
         run: python -m unittest discover -s tests -v
 
+  cross-platform-python-tests:
+    name: Python 3.12 tests on ${{ matrix.os }} (non-blocking evidence)
+    runs-on: ${{ matrix.os }}
+    # Evidence-gathering only. Windows and macOS are not claimed as validated
+    # platforms until this job has a recorded green history on main and is
+    # made blocking in the same change that updates docs/compatibility.md.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Bootstrap repository
+        run: python scripts/bootstrap.py
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install packaging tools
+        run: python -m pip install "setuptools>=77,<84" wheel build
+
+      - name: Install repository dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -v
+
+      # A venv's python.exe on Windows is a launcher that runs the base
+      # interpreter as a child process, the condition behind the WinError 32
+      # test cleanup failure. The step above uses the setup-python interpreter
+      # directly, so this repeats the suite from the documented contributor
+      # venv. It runs even if the step above failed, to keep both results.
+      - name: Run Python tests from a Windows contributor venv
+        if: runner.os == 'Windows' && !cancelled()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m venv "$env:RUNNER_TEMP\contributor-venv"
+          & "$env:RUNNER_TEMP\contributor-venv\Scripts\Activate.ps1"
+          python -c "import sys; assert sys.prefix != sys.base_prefix, 'not running in a venv'"
+          python -m pip install --upgrade pip
+          python -m pip install "setuptools>=77,<84" wheel build
+          python -m pip install -e ".[server]"
+          python -m unittest discover -s tests -v
+
   frontend:
     name: Frontend tests and production build
     runs-on: ubuntu-latest

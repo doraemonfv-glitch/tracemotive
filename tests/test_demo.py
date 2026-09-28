@@ -6,7 +6,6 @@ import re
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from urllib.error import URLError
@@ -23,6 +22,11 @@ from tracemotive.demo import (
     seed_demo,
 )
 from tracemotive.cli import _parser
+from tests.process_support import (
+    RetryingTemporaryDirectory,
+    stop_process,
+    wait_for_port_release,
+)
 
 
 _TRACE_ID = re.compile(r"[0-9a-f]{32}")
@@ -50,7 +54,8 @@ def _free_port() -> int:
 class DemoTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.directory = tempfile.TemporaryDirectory()
+        cls.directory = RetryingTemporaryDirectory()
+        cls.addClassCleanup(cls.directory.cleanup)
         cls.port = _free_port()
         cls.endpoint = f"http://127.0.0.1:{cls.port}"
         database = Path(cls.directory.name) / "demo.sqlite3"
@@ -69,25 +74,21 @@ class DemoTests(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        # Class cleanups run last-in first-out, also when setUpClass fails,
+        # so the server stops before its database directory is removed.
+        cls.addClassCleanup(cls._stop_server)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and not _health(cls.endpoint):
             if cls.server.poll() is not None:
                 raise AssertionError("demo test server exited before becoming ready")
             time.sleep(0.05)
         if not _health(cls.endpoint):
-            cls.server.terminate()
             raise AssertionError("demo test server did not become ready")
 
     @classmethod
-    def tearDownClass(cls) -> None:
-        if cls.server.poll() is None:
-            cls.server.terminate()
-            try:
-                cls.server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                cls.server.kill()
-                cls.server.wait(timeout=10)
-        cls.directory.cleanup()
+    def _stop_server(cls) -> None:
+        stop_process(cls.server)
+        wait_for_port_release(cls.port)
 
     def test_server_unavailable_and_remote_endpoint_fail_actionably(self) -> None:
         with self.assertRaisesRegex(DemoError, "not running on http://127.0.0.1:1"):
@@ -265,7 +266,7 @@ class DemoTests(unittest.TestCase):
             "print(json.dumps({'reference': result.reference_trace_id, 'changed': result.changed_trace_id}))"
         )
         for _ in range(2):
-            with tempfile.TemporaryDirectory() as directory:
+            with RetryingTemporaryDirectory() as directory:
                 port = _free_port()
                 endpoint = f"http://127.0.0.1:{port}"
                 database = Path(directory) / "demo.sqlite3"
@@ -339,13 +340,8 @@ class DemoTests(unittest.TestCase):
                         )
                     )
                 finally:
-                    if server.poll() is None:
-                        server.terminate()
-                        try:
-                            server.wait(timeout=10)
-                        except subprocess.TimeoutExpired:
-                            server.kill()
-                            server.wait(timeout=10)
+                    stop_process(server)
+                    wait_for_port_release(port)
         self.assertEqual(semantics[0], semantics[1])
 
     def test_repeated_seed_creates_new_pair_without_deleting_existing_traces(self) -> None:

@@ -55,6 +55,12 @@ workflow without changing Canonical data, ingest, storage, or API contracts.
 The two remaining Windows cleanup errors do not convert this local evidence
 into a complete green release gate.
 
+Post-release note: the `WinError 32` cleanup failure above was a test-harness
+defect, not a runtime defect. After v0.6.0 it was reproduced in a Windows
+contributor venv and fixed in the test harness; see R1 in
+`docs/v1-roadmap.md`. The v0.6.0 evidence above is unchanged, and this is not
+a Windows support claim.
+
 ## Historical v0.5.0 release notes
 
 v0.5.0 is an adoptability release. It does not add a new API namespace, change
