@@ -10,6 +10,13 @@ from typing import Any
 
 from tracemotive.collector import DEFAULT_BIND_HOST, create_app
 from tracemotive.demo import DEFAULT_DEMO_ENDPOINT, DemoError, format_demo_result, seed_demo
+from tracemotive.diagnostics import (
+    DOCTOR_ENDPOINT_RULE,
+    SERVER_INSTALL_COMMAND,
+    parse_doctor_endpoint,
+    run_doctor,
+    version_text,
+)
 from tracemotive.local_client import (
     ApiContractError,
     ApiResponseStatusError,
@@ -27,7 +34,6 @@ from tracemotive.storage import (
     MigrationError,
     resolve_database_path,
 )
-from tracemotive.ui.server import PackagedUIError, add_ui_routes
 
 
 DEFAULT_PORT = 8765
@@ -50,8 +56,41 @@ def _port_value(value: str) -> int:
     return port
 
 
+def _doctor_endpoint_value(value: str) -> Any:
+    try:
+        return parse_doctor_endpoint(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(DOCTOR_ENDPOINT_RULE) from None
+
+
+def _write_text(text: str, stream: Any) -> None:
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    stream.write(text.encode(encoding, "backslashreplace").decode(encoding) + "\n")
+    stream.flush()
+
+
+class _VersionAction(argparse.Action):
+    def __init__(self, option_strings: Sequence[str], dest: str, **kwargs: Any) -> None:
+        super().__init__(
+            option_strings,
+            dest=argparse.SUPPRESS,
+            default=argparse.SUPPRESS,
+            nargs=0,
+            help=kwargs.get("help"),
+        )
+
+    def __call__(self, parser: argparse.ArgumentParser, *args: Any) -> None:
+        _write_text(version_text(), sys.stdout)
+        parser.exit(0)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tracemotive")
+    parser.add_argument(
+        "--version",
+        action=_VersionAction,
+        help="show the package version and the separately versioned contracts",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     serve = commands.add_parser("serve", help="serve the local Collector and UI")
     serve.add_argument("--db", metavar="PATH", help="SQLite path or explicit :memory:")
@@ -106,11 +145,33 @@ def _parser() -> argparse.ArgumentParser:
     last.add_argument("--json", action="store_true", help="write the v3 JSON response to stdout")
     last.add_argument("--open", action="store_true", help="open the selected comparison URL")
     last.set_defaults(handler=_run_last)
+    doctor = commands.add_parser(
+        "doctor",
+        help="run read-only local diagnostics (creates and changes nothing)",
+    )
+    doctor.add_argument(
+        "--db",
+        metavar="PATH",
+        help="SQLite path to inspect (default: the path serve would use)",
+    )
+    doctor.add_argument(
+        "--endpoint",
+        default=DEFAULT_DEMO_ENDPOINT,
+        type=_doctor_endpoint_value,
+        metavar="URL",
+        help=(
+            "local server to probe: http://127.0.0.1:PORT or http://localhost:PORT "
+            f"(default: {DEFAULT_DEMO_ENDPOINT})"
+        ),
+    )
+    doctor.set_defaults(handler=_run_doctor)
     return parser
 
 
 def create_serve_app(database_path: str) -> tuple[Any, Any]:
     """Create the database-backed app and package-owned UI routes."""
+
+    from tracemotive.ui.server import add_ui_routes
 
     app = create_app(database_path=database_path)
     collector = app.state.tracemotive_collector
@@ -124,13 +185,28 @@ def create_serve_app(database_path: str) -> tuple[Any, Any]:
     return app, collector
 
 
+def _print_bind_failure(port: int) -> None:
+    print(
+        f"tracemotive serve: could not bind {DEFAULT_BIND_HOST}:{port}; "
+        f"port {port} may already be in use",
+        file=sys.stderr,
+    )
+    print(
+        f"tracemotive serve: next step: stop the program using port {port}, or choose "
+        "another port with: tracemotive serve --port PORT "
+        f"(other commands then need --endpoint http://{DEFAULT_BIND_HOST}:PORT)",
+        file=sys.stderr,
+    )
+
+
 def _run_serve(arguments: argparse.Namespace) -> int:
     try:
         import uvicorn
+        from tracemotive.ui.server import PackagedUIError
     except ImportError:
         print(
             "tracemotive serve requires the server extra; "
-            'install "tracemotive[server]"',
+            f"install it with: {SERVER_INSTALL_COMMAND}",
             file=sys.stderr,
         )
         return 1
@@ -151,17 +227,11 @@ def _run_serve(arguments: argparse.Namespace) -> int:
         if server.started:
             exit_code = 0
         else:
-            print(
-                f"tracemotive serve: could not bind {DEFAULT_BIND_HOST}:{arguments.port}",
-                file=sys.stderr,
-            )
+            _print_bind_failure(arguments.port)
     except KeyboardInterrupt:
         exit_code = 0
     except SystemExit as exc:
-        print(
-            f"tracemotive serve: could not bind {DEFAULT_BIND_HOST}:{arguments.port}",
-            file=sys.stderr,
-        )
+        _print_bind_failure(arguments.port)
         exit_code = exc.code if type(exc.code) is int and exc.code != 0 else 1
     except (DatabasePathError, MigrationError, PackagedUIError, ServeStartupError) as exc:
         print(f"tracemotive serve: {exc}", file=sys.stderr)
@@ -197,6 +267,17 @@ def _local_client_exit_code(exc: BaseException) -> int:
     return 1
 
 
+def _report_local_client_failure(command: str, exc: BaseException) -> int:
+    print(f"tracemotive {command}: {exc}", file=sys.stderr)
+    if isinstance(exc, TransportFailureError):
+        print(
+            f"tracemotive {command}: next step: start the local server with: "
+            "tracemotive serve (or run: tracemotive doctor)",
+            file=sys.stderr,
+        )
+    return _local_client_exit_code(exc)
+
+
 def _write_local_json(raw: bytes) -> None:
     sys.stdout.buffer.write(raw)
     sys.stdout.buffer.write(b"\n")
@@ -227,8 +308,7 @@ def _run_compare(arguments: argparse.Namespace) -> int:
             endpoint=arguments.endpoint,
         )
     except LocalClientFailures as exc:
-        print(f"tracemotive compare: {exc}", file=sys.stderr)
-        return _local_client_exit_code(exc)
+        return _report_local_client_failure("compare", exc)
     except Exception:
         print("tracemotive compare: unexpected internal failure", file=sys.stderr)
         return 1
@@ -247,8 +327,7 @@ def _run_last(arguments: argparse.Namespace) -> int:
             endpoint=arguments.endpoint,
         )
     except LocalClientFailures as exc:
-        print(f"tracemotive last: {exc}", file=sys.stderr)
-        return _local_client_exit_code(exc)
+        return _report_local_client_failure("last", exc)
     except Exception:
         print("tracemotive last: unexpected internal failure", file=sys.stderr)
         return 1
@@ -264,6 +343,16 @@ def _run_last(arguments: argparse.Namespace) -> int:
             )
         )
     return _open_if_requested(arguments, "last", selection.left.trace_id, selection.right.trace_id)
+
+
+def _run_doctor(arguments: argparse.Namespace) -> int:
+    try:
+        exit_code, report = run_doctor(db=arguments.db, target=arguments.endpoint)
+    except Exception:
+        print("tracemotive doctor: unexpected internal failure", file=sys.stderr)
+        return 1
+    _write_text(report, sys.stdout)
+    return exit_code
 
 
 def main(argv: Sequence[str] | None = None) -> int:
