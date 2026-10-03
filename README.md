@@ -85,6 +85,30 @@ tracemotive last TRACE_NAME [--endpoint URL] [--json] [--open]
   `3` invalid endpoint, `4` transport/network failure, `5` API/protocol
   failure, and `6` browser-open failure after a successful comparison.
 
+### Version and first-run diagnostics
+
+```text
+tracemotive --version
+tracemotive doctor [--db PATH] [--endpoint URL]
+```
+
+- `--version` prints the package version on its first line, then the
+  Canonical schema, ingest protocol, and database migration versions. These
+  are versioned separately; a package version never implies a schema,
+  protocol, or API version.
+- `doctor` is read-only. It reports the Python version, the installed package
+  version, the server dependencies, the packaged UI, the database path and
+  where it came from (`--db`, `TRACEMOTIVE_DB`, or the platform default),
+  whether the database exists and appears writable, its migration version,
+  and whether a local server answers the existing health route. It never
+  creates or changes a database, directory, migration, trace, or
+  configuration file, and never prints stored trace data, environment
+  variable values, or server responses.
+- `doctor --endpoint` accepts only `http://127.0.0.1:PORT` or
+  `http://localhost:PORT`; any other value is rejected without echoing it.
+- `doctor` exit codes are `0` all checks passed, `1` one or more checks
+  failed, and `2` usage error.
+
 ## Quick deterministic demo
 
 This path uses a deterministic local pair, so it needs no model provider, API

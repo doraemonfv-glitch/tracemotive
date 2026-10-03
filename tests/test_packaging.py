@@ -1111,6 +1111,54 @@ class BuiltArtifactPackagingTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_installed_cli_version_and_read_only_doctor(self) -> None:
+        executable = self._venv / (
+            Path("Scripts") / "tracemotive.exe" if os.name == "nt" else Path("bin") / "tracemotive"
+        )
+        version = subprocess.run(
+            [str(executable), "--version"],
+            cwd=self._run_root,
+            env=self._installed_environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        self.assertEqual(version.returncode, 0, version.stderr)
+        lines = version.stdout.splitlines()
+        self.assertEqual(lines[0], f"tracemotive {package_version()}")
+        self.assertIn("Canonical schema version: 0.1", lines)
+        self.assertIn("Ingest protocol version: 1", lines)
+        self.assertIn("Database migration version: 1", lines)
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        missing = self._run_root / "doctor-missing" / "tracemotive.sqlite3"
+        doctor = subprocess.run(
+            [
+                str(executable),
+                "doctor",
+                "--db",
+                str(missing),
+                "--endpoint",
+                f"http://127.0.0.1:{port}",
+            ],
+            cwd=self._run_root,
+            env=self._installed_environment(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        self.assertEqual(doctor.returncode, 1, doctor.stdout + doctor.stderr)
+        self.assertIn(f"[ok]   TraceMotive package: {package_version()}", doctor.stdout)
+        self.assertIn("[ok]   Packaged UI: available", doctor.stdout)
+        self.assertIn("[fail] Local server: no TraceMotive server is reachable", doctor.stdout)
+        self.assertFalse(missing.parent.exists())
+
     def test_installed_optional_boundary_uses_new_exception(self) -> None:
         result = self._run_installed(
             """

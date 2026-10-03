@@ -60,6 +60,8 @@ class ServeCliTests(unittest.TestCase):
                 )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("could not bind 127.0.0.1", result.stderr)
+        self.assertIn(f"127.0.0.1:{port}; port {port} may already be in use", result.stderr)
+        self.assertIn("tracemotive serve --port PORT", result.stderr)
 
     def test_serve_database_resolution_preserves_explicit_env_and_default_order(self):
         explicit = resolve_database_path(

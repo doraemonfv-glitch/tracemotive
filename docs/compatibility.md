@@ -76,7 +76,13 @@ The installed console entry point supports:
 ```text
 tracemotive compare LEFT_TRACE_ID RIGHT_TRACE_ID [--endpoint URL] [--json] [--open]
 tracemotive last TRACE_NAME [--endpoint URL] [--json] [--open]
+tracemotive --version
+tracemotive doctor [--db PATH] [--endpoint URL]
 ```
+
+`--version` reports the package version separately from the Canonical
+schema (`0.1`), ingest protocol (`1`), and database migration versions.
+`doctor` is read-only and probes only `127.0.0.1` or `localhost`.
 
 `last` requires an exact trace-name match, selects the two newest matches
 observed in one query sequence, assigns older/left and newer/right, and does
